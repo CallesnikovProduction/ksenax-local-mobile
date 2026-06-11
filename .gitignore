@@ -1,0 +1,49 @@
+# Gradle / Android build outputs
+.gradle/
+.kotlin/
+**/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Local machine configuration
+local.properties
+*.iml
+.DS_Store
+
+# Android Studio / IntelliJ local state
+.idea/
+
+# Release artifacts should be attached to GitHub Releases, not committed
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Signing material and local secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+signing.properties
+secrets.properties
+.env
+.env.*
+
+# Local model/runtime artifacts
+*.litertlm
+*.gguf
+*.onnx
+*.safetensors
+*.tflite
+models/
+
+# Codex/local assistant workspace artifacts
+.codex/
+.agents/
+.codex-remote-attachments/
+
+# Private research notes not prepared for the public repo yet
+meta-docs/
