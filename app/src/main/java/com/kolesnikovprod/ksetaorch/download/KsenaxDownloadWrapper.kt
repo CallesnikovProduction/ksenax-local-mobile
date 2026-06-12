@@ -101,6 +101,30 @@ class KsenaxDownloadWrapper(
     }
 
     /**
+     * Отменяет активную задачу загрузки Gemma 4 E2B.
+     *
+     * Метод скрывает от install-сервиса конкретный механизм отмены. Для Android
+     * реализации это `DownloadManager.remove(downloadId)`.
+     * @since 0.1
+     * @author Stepan Kolesnikov
+     */
+    fun cancelGemma4E2BDownload(downloadId: Long) {
+        downloader.cancelDownload(downloadId)
+    }
+
+    /**
+     * Возвращает доменный снимок задачи загрузки Gemma 4 E2B.
+     *
+     * Wrapper не отдает наружу `Cursor` или Android-константы, чтобы верхние слои
+     * зависели от состояния установки, а не от деталей `DownloadManager`.
+     * @since 0.1
+     * @author Stepan Kolesnikov
+     */
+    fun queryGemma4E2BDownloadSnapshot(downloadId: Long): KsenaxDownloadSnapshot? {
+        return downloader.queryDownloadSnapshot(downloadId)
+    }
+
+    /**
      * Возвращает абсолютный путь к локальному файлу Gemma 4 E2B.
      *
      * Метод не доказывает, что модель валидна. Перед передачей этого пути в runtime

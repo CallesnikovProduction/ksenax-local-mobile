@@ -1,57 +1,80 @@
-# Ksenax Orchestration
+# Ksenax — A Graphical Shell Application for Orchestrating a Local Mobile Model in Agent Mode with Restricted Tools
 
-Ksenax is an experimental local-first Android application for testing an on-device agent workflow with Gemma-family models, LiteRT-LM, and a strict Kotlin-side tool execution layer.
+**Ksenax** _**(Kolesnikov's Essential Neural-Agentic Experience)**_ is an experimental **local-first** Android application designed to explore on-device agent workflows using **Google Gemma** family models, **LiteRT-LM**, and a strictly controlled Kotlin-based tool execution layer (orchestrating device actions through the capabilities of a local AI model).
 
-The project is intentionally open-source friendly: the repository contains the Android app source code, Gradle configuration, UI resources, and public project documentation. Large model files, local IDE state, signing keys, generated APKs, and machine-specific configuration are not committed.
+The project is intended to be fully open source. The repository contains the Android application source code, Gradle configuration, UI resources, and public technical documentation. Large model files, local IDE state, signing keys, generated APKs, and machine-specific configuration are intentionally excluded from the repository and distributed separately through releases.
 
 ## Current Status
 
-This is an intermediate MVP version. The app is being developed as a research-oriented Android shell for a local agent:
+The project is currently in an intermediate **MVP (Minimum Viable Product)** stage and is being developed as a research-oriented Android shell for a local AI agent.
+
+Core principles:
 
 - model artifacts are downloaded at runtime instead of being bundled into the APK;
-- the app keeps model execution local on the device where possible;
-- Android actions are expected to go through explicit Kotlin allowlists and permission checks;
-- generated APKs are intended for GitHub Releases, not for the source tree.
+    
+- the application's architecture is primarily designed around the open multimodal **Gemma-4-E2B-it** model in its **LiteRT-LM API** variant;
+    
+- whenever possible, all model-driven actions are executed entirely on the local device;
+    
+- all Android actions must pass through explicit Kotlin-side allowlists and permission checks.
+    
 
 ## Repository Contents
 
 The public repository is expected to include:
 
-- `app/src/main` - Android app source, manifest, Compose UI, and resources;
-- `app/src/test` and `app/src/androidTest` - test sources;
-- `gradle/`, `gradlew`, `gradlew.bat` - Gradle wrapper and version catalog;
-- `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` - project build configuration;
-- `AGENTS.md` - shared project concept for agent-oriented development;
-- `metadocs/` - public technical notes prepared for the repository.
+- `app/src/main` — Android application source code, `AndroidManifest`, Jetpack Compose UI, and resources;
+    
+- `app/src/test` and `app/src/androidTest` — unit and instrumentation tests;
+    
+- `gradle/`, `gradlew`, `gradlew.bat` — Gradle Wrapper and version catalog;
+    
+- `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` — project build configuration;
+    
+- `AGENTS.md` — documentation describing the overall architecture and project concepts for AI coding agents (such as Claude Code, Codex App, and others);
+    
+- `metadocs/` — public technical notes prepared for publication.
+    
 
-The repository intentionally does not include:
+The repository **intentionally does not include**:
 
 - Android Studio local state;
-- local SDK paths;
-- Gradle/Kotlin build caches;
-- generated APK/AAB files;
+    
+- local Android SDK paths;
+    
+- Gradle and Kotlin caches;
+    
+- generated APK or AAB artifacts (see Releases);
+    
 - signing keys or release credentials;
-- downloaded model weights or runtime model caches;
-- private research notes that are not cleaned for publication yet.
+    
+- downloaded model weights or local model caches;
+    
+- private research notes that have not yet been prepared for publication.
+    
 
-## Requirements
+## Build Requirements
 
 To build the project from source, install:
 
-- Android Studio or Android SDK command-line tools;
-- an Android SDK version compatible with the project `compileSdk`;
-- JDK 21, or let Gradle provision the configured toolchain;
+- Android Studio or Android SDK Command-line Tools;
+    
+- an Android SDK version compatible with the project's `compileSdk`;
+    
+- JDK 21 (or allow Gradle to provision the configured toolchain automatically);
+    
 - Git.
+    
 
-Android Studio will normally generate `local.properties` automatically when the project is opened. That file contains a local SDK path and must stay untracked.
+When opening the project, Android Studio will typically generate a `local.properties` file automatically. This file contains the local Android SDK path and **must never be committed to Git**.
 
-## Build From Source
+## Building from Source
 
 Clone the repository:
 
 ```powershell
 git clone <repo-url>
-cd KsetaAgentic-Application-Project
+cd ksenax-local-mobile
 ```
 
 Build a debug APK:
@@ -66,62 +89,55 @@ On Linux or macOS:
 ./gradlew :app:assembleDebug
 ```
 
-The generated debug APK will appear under `app/build/outputs/`. The whole `app/build/` directory is ignored by Git.
+The generated debug APK will be located in:
 
-## Install On A Connected Device
+```text
+app/build/outputs/
+```
 
-Enable Developer Options and USB debugging on the Android device, connect it with a data-capable USB cable, then run:
+The entire `app/build/` directory is excluded from version control.
+
+## Installing on a Connected Device
+
+Enable **Developer Options** and **USB Debugging** on your Android device, connect it using a data-capable USB cable, and run:
 
 ```powershell
 .\gradlew.bat :app:installDebug
 ```
 
-You can also open the project in Android Studio and press Run after selecting the connected device.
+Alternatively, open the project in Android Studio, select the connected device, and press **Run (`Shift + F10`)**.
 
 ## Release Builds
 
-Release APKs should be published through GitHub Releases, not committed to the repository.
-
-For local release experiments:
-
-```powershell
-.\gradlew.bat :app:assembleRelease
-```
-
-A real public release should be signed with a release keystore. Keep all signing files and passwords outside the repository. Use GitHub Actions secrets or another secure local setup if release automation is added later.
+...
 
 ## Model Files
 
-Gemma/LiteRT-LM model files are large and are not part of this repository. The app is designed around runtime model delivery: the APK stays small, while model artifacts are downloaded and verified separately on the device.
+Gemma and LiteRT-LM model files are large and **are not included in this repository**.
 
-Do not commit files such as:
+The application is designed around runtime model delivery: the APK remains lightweight while model artifacts are downloaded and verified separately on the target device.
 
-- `.litertlm`
-- `.gguf`
-- `.onnx`
-- `.safetensors`
-- `.tflite`
+Model licenses and usage terms are independent from the application's source code license. Anyone forking the project should review the licensing terms of the corresponding model provider before redistributing model artifacts.
 
-Model licenses and usage terms are separate from the application source license. Anyone forking the project should review the terms of the model provider before redistributing model artifacts.
+## Notes for Potential Forks
 
-## Git Ignore Policy
+Fork maintainers are free to modify the user interface, add new local tools, replace the model backend, or experiment with their own agent orchestration approaches.
 
-The root `.gitignore` is configured to keep the source tree clean for open-source publication:
+However, one fundamental safety rule must always be respected:
 
-- build outputs are ignored through `**/build/`;
-- local Android Studio and Gradle state are ignored;
-- `local.properties` is ignored because it contains a machine-specific SDK path;
-- APK/AAB artifacts are ignored and should go to GitHub Releases;
-- keystores, signing config, env files, and local secrets are ignored;
-- downloaded model files and local model directories are ignored;
-- Codex/local assistant artifacts are ignored;
-- `meta-docs/` is ignored until those research notes are cleaned for public reading.
+**Model output must never be executed directly.** It must:
 
-## Forking Notes
-
-Forks are welcome to change the UI, add new local tools, replace the model backend, or experiment with agent orchestration. The important safety rule is that model output should not be executed directly. It should be parsed, validated against an allowlist, checked against Android permissions, and only then mapped to real device actions.
+1. be parsed into a structured tool invocation;
+    
+2. be validated against an allowlist;
+    
+3. be checked against the required Android permissions;
+    
+4. only then be mapped to an actual device action.
+    
 
 ## License
 
-The project is intended to be full open source. Add a `LICENSE` file before the first public release so downstream users know the exact terms.
+The project is intended to be fully open source.
 
+The repository includes a `LICENSE` file under the **Apache License 2.0**, allowing users and contributors to clearly understand the terms governing the use, modification, and distribution of the project.

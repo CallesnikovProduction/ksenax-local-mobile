@@ -134,6 +134,69 @@ class KsenaxModelDownloader(
     }
 
     /**
+     * Отменяет задачу загрузки в системной очереди Android.
+     * @since 0.1
+     * @author Stepan Kolesnikov
+     */
+    fun cancelDownload(downloadId: Long) {
+        ksenaxManager.remove(downloadId)
+    }
+
+    /**
+     * Возвращает доменный снимок состояния задачи загрузки.
+     *
+     * Все детали `DownloadManager.Query`, `Cursor` и Android status-констант остаются
+     * внутри Android-адаптера загрузки.
+     * @since 0.1
+     * @author Stepan Kolesnikov
+     */
+    fun queryDownloadSnapshot(downloadId: Long): KsenaxDownloadSnapshot? {
+        val query = DownloadManager.Query().setFilterById(downloadId)
+        val cursor = ksenaxManager.query(query) ?: return null
+
+        cursor.use {
+            if (!it.moveToFirst()) return null
+
+            val status = it.getInt(
+                it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+            )
+            val downloadedBytes = it.getLong(
+                it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+            )
+            val totalBytes = it.getLong(
+                it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+            )
+            val progress = if (totalBytes > 0L) {
+                (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+
+            return KsenaxDownloadSnapshot(
+                progress = progress,
+                state = status.toKsenaxDownloadState(),
+            )
+        }
+    }
+
+    /**
+     * Переводит Android DownloadManager status в доменное состояние Ksenax.
+     *
+     * @since 0.1
+     * @author Stepan Kolesnikov
+     */
+    private fun Int.toKsenaxDownloadState(): KsenaxDownloadState {
+        return when (this) {
+            DownloadManager.STATUS_PENDING -> KsenaxDownloadState.PENDING
+            DownloadManager.STATUS_RUNNING -> KsenaxDownloadState.RUNNING
+            DownloadManager.STATUS_PAUSED -> KsenaxDownloadState.PAUSED
+            DownloadManager.STATUS_SUCCESSFUL -> KsenaxDownloadState.SUCCESSFUL
+            DownloadManager.STATUS_FAILED -> KsenaxDownloadState.FAILED
+            else -> KsenaxDownloadState.UNKNOWN
+        }
+    }
+
+    /**
      * Возвращает объект [File] для ожидаемого локального пути модели.
      *
      * Метод не проверяет существование файла и не создает его. Он только собирает

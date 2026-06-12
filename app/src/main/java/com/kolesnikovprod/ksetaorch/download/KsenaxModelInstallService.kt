@@ -1,21 +1,22 @@
 package com.kolesnikovprod.ksetaorch.download
 
-import android.app.DownloadManager
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Сервис установки локальной модели.
+ * Прикладной сервис установки локальной модели.
  *
- * Этот класс собирает не-UI операции, которые раньше жили в MainActivity:
- * старт загрузки, отмену, восстановление download id, опрос DownloadManager,
- * удаление частичного файла и проверку локального `.litertlm` через размер и SHA256.
+ * Этот класс собирает non-UI операции:
+ * - старт загрузки,
+ * - отмену,
+ * - восстановление download id,
+ * - опрос состояния загрузки,
+ * - удаление частичного файла и проверку локального `.litertlm` через размер и SHA256.
  *
- * Сервис не является Composable и не рисует экран. Его задача - дать экрану простой
- * API установки модели, чтобы UI работал с состояниями, а не с Android DownloadManager
- * и SharedPreferences напрямую.
+ * Задача сервиса - дать экрану простой API установки модели,
+ * чтобы UI работал с состояниями, а не с download-адаптером и SharedPreferences напрямую.
  * @since 0.1
  * @author Stepan Kolesnikov
  */
@@ -24,9 +25,6 @@ class KsenaxModelInstallService(
 ) {
 
     private val context = context.applicationContext
-
-    private val downloadManager =
-        this.context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     private val downloadWrapper = KsenaxDownloadWrapper(
         KsenaxModelDownloader(
@@ -71,7 +69,7 @@ class KsenaxModelInstallService(
      */
     fun cancelGemma4E2BDownload(downloadId: Long) {
         if (downloadId != NO_DOWNLOAD_ID) {
-            downloadManager.remove(downloadId)
+            downloadWrapper.cancelGemma4E2BDownload(downloadId)
         }
 
         clearGemma4E2BDownloadArtifacts()
@@ -80,8 +78,8 @@ class KsenaxModelInstallService(
     /**
      * Очищает сохраненный download id и удаляет локальный файл модели.
      *
-     * Используется после отмены, ошибки загрузки или ситуации, где запись
-     * DownloadManager уже не найдена.
+     * Используется после отмены, ошибки загрузки или ситуации, где запись активной
+     * загрузки уже не найдена.
      * @since 0.1
      * @author Stepan Kolesnikov
      */
@@ -180,32 +178,7 @@ class KsenaxModelInstallService(
      * @author Stepan Kolesnikov
      */
     fun queryDownloadSnapshot(downloadId: Long): KsenaxDownloadSnapshot? {
-        val query = DownloadManager.Query().setFilterById(downloadId)
-        val cursor = downloadManager.query(query) ?: return null
-
-        cursor.use {
-            if (!it.moveToFirst()) return null
-
-            val status = it.getInt(
-                it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
-            )
-            val downloadedBytes = it.getLong(
-                it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-            )
-            val totalBytes = it.getLong(
-                it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-            )
-            val progress = if (totalBytes > 0L) {
-                (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-
-            return KsenaxDownloadSnapshot(
-                progress = progress,
-                state = status.toKsenaxDownloadState(),
-            )
-        }
+        return downloadWrapper.queryGemma4E2BDownloadSnapshot(downloadId)
     }
 
     /**
@@ -223,49 +196,8 @@ class KsenaxModelInstallService(
             .apply()
     }
 
-    /**
-     * Переводит Android DownloadManager status в доменное состояние Ksenax.
-     *
-     * @since 0.1
-     * @author Stepan Kolesnikov
-     */
-    private fun Int.toKsenaxDownloadState(): KsenaxDownloadState {
-        return when (this) {
-            DownloadManager.STATUS_PENDING -> KsenaxDownloadState.PENDING
-            DownloadManager.STATUS_RUNNING -> KsenaxDownloadState.RUNNING
-            DownloadManager.STATUS_PAUSED -> KsenaxDownloadState.PAUSED
-            DownloadManager.STATUS_SUCCESSFUL -> KsenaxDownloadState.SUCCESSFUL
-            DownloadManager.STATUS_FAILED -> KsenaxDownloadState.FAILED
-            else -> KsenaxDownloadState.UNKNOWN
-        }
-    }
-
     private companion object {
         const val DOWNLOAD_PREFERENCES_NAME = "kseta_download_preferences"
         const val DOWNLOAD_ID_KEY = "active_model_download_id"
     }
-}
-
-/**
- * Снимок текущей задачи загрузки.
- * @since 0.1
- * @author Stepan Kolesnikov
- */
-data class KsenaxDownloadSnapshot(
-    val progress: Float,
-    val state: KsenaxDownloadState,
-)
-
-/**
- * Упрощенное состояние DownloadManager без прямой зависимости UI от Android-констант.
- * @since 0.1
- * @author Stepan Kolesnikov
- */
-enum class KsenaxDownloadState {
-    PENDING,
-    RUNNING,
-    PAUSED,
-    SUCCESSFUL,
-    FAILED,
-    UNKNOWN,
 }

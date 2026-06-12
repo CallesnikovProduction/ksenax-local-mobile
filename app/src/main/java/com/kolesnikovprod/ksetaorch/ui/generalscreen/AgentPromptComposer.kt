@@ -40,6 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kolesnikovprod.ksetaorch.ui.HomeUiState
 import com.kolesnikovprod.ksetaorch.ui.theme.ksenaxTextGradient
 
 /**
@@ -53,27 +54,26 @@ import com.kolesnikovprod.ksetaorch.ui.theme.ksenaxTextGradient
  */
 @Composable
 fun AgentPromptComposer(
+    modifier: Modifier = Modifier,
     text: String,
+    uiStateFromHomeScreen: HomeUiState,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
-    onDownloadModel: () -> Unit = {},
-    isDownloaded: Boolean = false,
-    isSending: Boolean = false,
-    isDownloading: Boolean = false,
-    isDownloadInterrupted: Boolean = false,
-    isDownloadCancelled: Boolean = false,
-    downloadProgress: Float = 0f,
-    modifier: Modifier = Modifier,
+    onDownloadModel: () -> Unit = {}
 ) {
-    if (isDownloaded) OnDownloaded(modifier, text, onTextChange, onSend, isSending)
-    else OnNonDownloaded(
-        modifier = modifier,
-        onDownloadModel = onDownloadModel,
-        isDownloading = isDownloading,
-        isDownloadInterrupted = isDownloadInterrupted,
-        isDownloadCancelled = isDownloadCancelled,
-        downloadProgress = downloadProgress,
-    )
+    if (uiStateFromHomeScreen.isDownloadRemembered)
+        OnDownloaded(modifier, text, onTextChange, onSend,
+            uiStateFromHomeScreen.isRoutingPrompt
+        )
+    else
+        OnNonDownloaded(
+            modifier              = modifier,
+            onDownloadModel       = onDownloadModel,
+            isDownloading         = uiStateFromHomeScreen.isDownloading,
+            isDownloadInterrupted = uiStateFromHomeScreen.isDownloadInterrupted,
+            isDownloadCancelled   = uiStateFromHomeScreen.isDownloadCancelled,
+            downloadProgress      = uiStateFromHomeScreen.downloadProgress
+        )
 }
 
 /**
@@ -89,7 +89,6 @@ private fun OnDownloaded(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     isSending: Boolean,
-
 ) {
     Column(
         modifier = modifier,
