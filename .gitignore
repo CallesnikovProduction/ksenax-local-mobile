@@ -46,4 +46,5 @@ models/
 .codex-remote-attachments/
 
 # Private research notes not prepared for the public repo yet
-meta-docs/
+metadocs/
+gpt-researches/

@@ -7,4 +7,6 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="launch_background">#FF050710</color>
+    <color name="launch_accent">#FF5B5366</color>
 </resources>
