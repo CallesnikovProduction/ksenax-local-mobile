@@ -1,3 +1,5 @@
+![OpenKsenax Logo](assets/title_logo_imagegen_2_generated.png)
+
 # Ksenax — A Graphical Shell Application for Orchestrating a Local Mobile Model in Agent Mode with Restricted Tools
 
 **Ksenax** _**(Kolesnikov's Essential Neural-Agentic Experience)**_ is an experimental **local-first** Android application designed to explore on-device agent workflows using **Google Gemma** family models, **LiteRT-LM**, and a strictly controlled Kotlin-based tool execution layer (orchestrating device actions through the capabilities of a local AI model).
