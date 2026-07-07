@@ -1,143 +1,320 @@
 # Ksenax — A Graphical Shell Application for Orchestrating a Local Mobile Model in Agent Mode with Restricted Tools
 
-**Ksenax** _**(Kolesnikov's Essential Neural-Agentic Experience)**_ is an experimental **local-first** Android application designed to explore on-device agent workflows using **Google Gemma** family models, **LiteRT-LM**, and a strictly controlled Kotlin-based tool execution layer (orchestrating device actions through the capabilities of a local AI model).
+## Что за проект? Зачем нужен?
 
-The project is intended to be fully open source. The repository contains the Android application source code, Gradle configuration, UI resources, and public technical documentation. Large model files, local IDE state, signing keys, generated APKs, and machine-specific configuration are intentionally excluded from the repository and distributed separately through releases.
+**Ksenax** **_(Kolesnikov's Essential Neural-Agentic Experience)_** — это исследовательское Android-приложение для экспериментов с локальными агентными workflow на мобильном устройстве.
 
-## Current Status
+Проект строится вокруг идеи **local-first AI**:
 
-The project is currently in an intermediate **MVP (Minimum Viable Product)** stage and is being developed as a research-oriented Android shell for a local AI agent.
+- модель запускается на устройстве;
+- пользовательские команды обрабатываются локально, когда это технически возможно;
+- Android-действия выполняются не моделью напрямую, а через контролируемые Kotlin-инструменты;
+- каждый инструмент проходит через allowlist, permission-check и policy-layer;
+- большие модельные файлы не вшиваются в APK, а доставляются отдельно.
 
-Core principles:
+Ksenax — это не “магический автопилот телефона”. Это попытка построить **воспроизводимую, безопасную и расширяемую Android-платформу для локального ИИ-агента**.
 
-- model artifacts are downloaded at runtime instead of being bundled into the APK;
-    
-- the application's architecture is primarily designed around the open multimodal **Gemma-4-E2B-it** model in its **LiteRT-LM API** variant;
-    
-- whenever possible, all model-driven actions are executed entirely on the local device;
-    
-- all Android actions must pass through explicit Kotlin-side allowlists and permission checks.
-    
+---
 
-## Repository Contents
+## Почему проект интересен
 
-The public repository is expected to include:
+Современные большие языковые модели уже умеют рассуждать, планировать и вызывать функции. Более того, многие гиганты в сфере ИИ строят свои агентные системы, позволяющие манипулировать действиями на устройствах. 
 
-- `app/src/main` — Android application source code, `AndroidManifest`, Jetpack Compose UI, and resources;
-    
-- `app/src/test` and `app/src/androidTest` — unit and instrumentation tests;
-    
-- `gradle/`, `gradlew`, `gradlew.bat` — Gradle Wrapper and version catalog;
-    
-- `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` — project build configuration;
-    
-- `AGENTS.md` — documentation describing the overall architecture and project concepts for AI coding agents (such as Claude Code, Codex App, and others);
-    
-- `metadocs/` — public technical notes prepared for publication.
-    
+OpenKsenax же преследует мысль автоматизации в рамках Android-системы.
 
-The repository **intentionally does not include**:
+Android — это среда с жёсткими ограничениями:
 
-- Android Studio local state;
-    
-- local Android SDK paths;
-    
-- Gradle and Kotlin caches;
-    
-- generated APK or AAB artifacts (see Releases);
-    
-- signing keys or release credentials;
-    
-- downloaded model weights or local model caches;
-    
-- private research notes that have not yet been prepared for publication.
-    
+- приложение не может произвольно управлять системой;
+- многие действия требуют явного разрешения пользователя;
+- некоторые действия доступны только через системные панели;
+- модельный вывод нельзя считать доверенным.
 
-## Build Requirements
+**Ksenax исследует правильную границу между локальной моделью и реальным Android-исполнением.**
 
-To build the project from source, install:
+```
+Пользователь
+    ↓
+Локальная модель (планировщик)
+    ↓
+Наборы доступных инструментов
+    ↓
+Локальная модель («исполнитель»)
+    ↓
+Структурированный tool call
+    ↓
+Policy Engine
+    ↓
+Tool Registry
+    ↓
+Безопасный Android Executor
+    ↓
+Лог действия и результат
+```
 
-- Android Studio or Android SDK Command-line Tools;
-    
-- an Android SDK version compatible with the project's `compileSdk`;
-    
-- JDK 21 (or allow Gradle to provision the configured toolchain automatically);
-    
-- Git.
-    
+---
 
-When opening the project, Android Studio will typically generate a `local.properties` file automatically. This file contains the local Android SDK path and **must never be committed to Git**.
+## Ключевые возможности
 
-## Building from Source
+- 🧠 **Local-first agent shell**  
+    Android-оболочка для локального ИИ-агента без обязательной зависимости от облачного backend.
+- 📱 **Android-native implementation**  
+    Kotlin, Jetpack Compose, Coroutines, Flow, Room и нативные Android API.
+- ⚡ **Gemma / LiteRT-LM oriented architecture**  
+    Архитектура ориентирована на локальные модели семейства Google Gemma в мобильном edge-runtime (в частности, Gemma-4-E2B & FunctionGemma 270M).
+- 🛠 **Tool Registry**  
+    Все доступные действия представлены как явно описанные инструменты.
+- 🔒 **Policy-based execution**  
+    Модель не может выполнить действие напрямую. Каждый вызов проходит проверку.
+- 📦 **Runtime model delivery**  
+    Большие модельные файлы не включаются в репозиторий и APK.
+- 🎙 **Voice-ready direction**  
+    Проект развивается в сторону голосового взаимодействия через push-to-talk и локальный агентный контур.
+- 📊 **Research-oriented metrics**  
+    Проект предполагает измерение latency, success rate, tool-call accuracy и отказов по policy.
 
-Clone the repository:
+---
 
-```powershell
+## Safety Model
+
+Главное правило проекта:
+
+> **Model output must never be executed directly.**
+
+Любой ответ модели должен пройти несколько этапов:
+
+1. поступление исходного инференса в планировочный этап оркестрации локальной модели
+2. быть разобран в структурированный вызов инструмента;
+3. пройти проверку имени инструмента по allowlist;
+4. пройти проверку аргументов;
+5. пройти проверку Android-разрешений;
+6. пройти проверку уровня риска;
+7. при необходимости запросить подтверждение пользователя (*пока функционал не нуждается в подтверждении, однако логика внутри уже содержится*);
+8. только после этого быть сопоставлен с реальным Android-действием.
+
+---
+
+## Что Ksenax НЕ делает
+
+Проект намеренно не строится вокруг опасной идеи “LLM сама управляет всем телефоном”.
+
+Ksenax не должен:
+
+- выполнять произвольный код из ответа модели;
+- скрыто управлять устройством без согласия пользователя;
+- обходить Android permission model;
+- тихо включать/выключать системные функции, недоступные обычному приложению;
+- автоматически кликать по любым приложениям без политики и ограничений;
+- выполнять коммуникационные действия без подтверждения пользователя;
+- отправлять пользовательские секреты в облачные LLM-приложения.
+
+Это исследовательский проект про **контролируемую агентность**, а не про безлимитную автоматизацию.
+
+---
+
+## Текущий статус
+
+Проект находится в стадии активной разработки и промежуточного MVP.
+
+Текущая цель — построить устойчивую Android-оболочку, в которой можно исследовать:
+
+- локальный чат с моделью (в трёх режимах: *«basic»* — обычный текстовый, *«agentic»* — agent-based, *«temporaric»* — обычный текстовый чат, который не индексируется и не сохраняется в памяти);
+- runtime-доставку модельных артефактов;
+- безопасный tool-calling;
+- voice-first взаимодействие;
+- policy-layer для Android-действий;
+- будущую addon-систему (с конкретной реализацией системой автоответчика «NO RADAR» на базе локальной модели, относящаяся к будущему релизу версии 0.3);
+- сравнение локальных моделей и режимов исполнения.
+
+---
+
+## Доступный набор ограниченных инструментов
+
+| Tool                            | Назначение                                             | Комментарий                                                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `torch_on`                      | Включить фонарик устройства                            | Работает через FunctionGemma OneShot. Быстрый `NonPlanable` tool.                                                                                                                         |
+| `torch_off`                     | Выключить фонарик устройства                           | Работает через FunctionGemma OneShot. Для фраз типа “выключить фонарь” добавлены расширенные keywords.                                                                                    |
+| `torch_toggle`                  | Переключить фонарик                                    | Используется для короткого запроса вроде “фонарик”. Состояние определяется по последнему состоянию, которое запрашивало приложение.                                                       |
+| `alarm_at_time`                 | Поставить будильник на конкретное локальное время      | Например: “поставь будильник на 19:00”. Android-будильник создаётся через системное приложение “Часы”.                                                                                    |
+| `alarm_after_minutes`           | Поставить один или несколько будильников через N минут | Например: “поставь 20 будильников через 4 минуты”. Количество и минуты извлекаются локальным draft-слоем, чтобы FunctionGemma не путала числа.                                            |
+| `alarm_after_hours`             | Поставить один или несколько будильников через N часов | Например: “поставь 5 будильников через 10 часов”. Количество и часы также нормализуются локально.                                                                                         |
+| `alarm_at_date_time`            | Поставить будильник на точную дату и время             | Поддержка есть в контракте, но системный AlarmClock ограничен ближайшими 24 часами; для дальних дат лучше календарь/app-alarm контур.                                                     |
+| `alarm_clear_all`               | Попытаться отключить все системные будильники          | Использует Android `ACTION_DISMISS_ALARM` + `ALARM_SEARCH_MODE_ALL`. Не гарантирует удаление записей из приложения “Часы”; поддержка зависит от системного Clock/OEM.                     |
+| `calendar_event_create`         | Создать событие в календаре                            | Планируемый tool через Gemma-4 + FunctionGemma. Executor сам переводит локальную дату/время в millis. Сейчас календарный контур ещё самый рискованный и требует живого теста на телефоне. |
+| `obsidian_note_write`           | Записать markdown-заметку                              | Планируемый tool. Gemma-4 генерирует содержимое, FunctionGemma только подтверждает function-call, executor пишет в markdown. Сейчас запись идёт в дневную заметку.                        |
+| `obsidian_note_append_analysis` | Дописать анализ в markdown-заметку                     | Контракт есть, но полноценный сценарий “найди нужную заметку по названию и допиши туда анализ” ещё не завершён: нет отдельного tool для списка md-файлов/поиска кандидата.                |
+| `create_or_edit_markdown_note`  | Низкоуровневый executor записи markdown                | Это не FunctionGemma-facing tool, а внутренний Android/storage executor, который реально пишет файл. Используется Obsidian OneShot-адаптером.                                             |
+
+---
+
+## Модельная стратегия
+
+Ksenax ориентирован на локальные модели и edge-runtime.
+
+Основное направление:
+
+- **Gemma 4 E2B / E4B** — reasoning, planning, multimodal direction;
+- **FunctionGemma** — специализированный action-router;
+- **EmbeddingGemma / local embeddings** *(вектор развития)* — будущий слой локальной памяти и RAG.
+
+---
+
+## Установка может быть чистого APK из раздела с Releases, либо по способам ниже.
+
+---
+
+## Сборка из исходников
+
+Клонировать репозиторий:
+
+```
 git clone <repo-url>
-cd ksenax-local-mobile
+cd ksenax
 ```
 
-Build a debug APK:
+Собрать debug APK на Linux/macOS:
 
-```powershell
-.\gradlew.bat :app:assembleDebug
 ```
-
-On Linux or macOS:
-
-```bash
 ./gradlew :app:assembleDebug
 ```
 
-The generated debug APK will be located in:
+Собрать debug APK на Windows:
 
-```text
+```
+.\gradlew.bat :app:assembleDebug
+```
+
+APK будет создан в директории:
+
+```
 app/build/outputs/
 ```
 
-The entire `app/build/` directory is excluded from version control.
+Вся директория `app/build/` исключена из Git.
 
-## Installing on a Connected Device
+---
 
-Enable **Developer Options** and **USB Debugging** on your Android device, connect it using a data-capable USB cable, and run:
+## Установка на устройство
 
-```powershell
+Включите на Android-устройстве:
+
+1. Developer Options;
+2. USB Debugging.
+
+Затем подключите устройство и выполните:
+
+```
+./gradlew :app:installDebug
+```
+
+На Windows:
+
+```
 .\gradlew.bat :app:installDebug
 ```
 
-Alternatively, open the project in Android Studio, select the connected device, and press **Run (`Shift + F10`)**.
+Также можно открыть проект в Android Studio, выбрать устройство и нажать **Run**.
 
-## Release Builds
+---
 
-...
+## Требования для сборки
+
+Для сборки проекта из исходников понадобится:
+
+- Android Studio или Android SDK Command-line Tools;
+- Android SDK, совместимый с `compileSdk` проекта;
+- JDK 21 или Gradle toolchain;
+- Git;
+- устройство или эмулятор Android для запуска.
+
+Файл `local.properties` создаётся Android Studio автоматически и содержит путь к локальному Android SDK.
+
+> `local.properties` нельзя коммитить в Git.
+
+---
 
 ## Model Files
 
-Gemma and LiteRT-LM model files are large and **are not included in this repository**.
+Модельные файлы Gemma / LiteRT-LM являются крупными артефактами и не включаются в репозиторий.
 
-The application is designed around runtime model delivery: the APK remains lightweight while model artifacts are downloaded and verified separately on the target device.
+Ksenax проектируется вокруг runtime model delivery:
 
-Model licenses and usage terms are independent from the application's source code license. Anyone forking the project should review the licensing terms of the corresponding model provider before redistributing model artifacts.
+```
+APK остаётся лёгким
+    ↓
+модель скачивается НЕПОСРЕДСТВЕННО через настройки приложения
+    ↓
+артефакт проверяется всякий раз при заходе в чат/приложение
+    ↓
+модель подключается локально
+```
 
-## Notes for Potential Forks
+Лицензии моделей не равны лицензии исходного кода приложения. Перед распространением модельных артефактов необходимо отдельно проверить условия соответствующего поставщика модели.
 
-Fork maintainers are free to modify the user interface, add new local tools, replace the model backend, or experiment with their own agent orchestration approaches.
+---
 
-However, one fundamental safety rule must always be respected:
+## Стратегия проекта
 
-**Model output must never be executed directly.** It must:
+Ksenax развивается как **GitHub-first / research-first** проект.
 
-1. be parsed into a structured tool invocation;
-    
-2. be validated against an allowlist;
-    
-3. be checked against the required Android permissions;
-    
-4. only then be mapped to an actual device action.
-    
+Приоритеты:
 
-## License
+1. корректная архитектура;
+2. безопасность;
+3. воспроизводимость;
+4. local-first execution;
+5. измеримые результаты;
+6. чистый Kotlin/Android код;
+7. расширяемость через tools и addons.
 
-The project is intended to be fully open source.
+Это не быстрый демонстрационный чат поверх LLM.
 
-The repository includes a `LICENSE` file under the **Apache License 2.0**, allowing users and contributors to clearly understand the terms governing the use, modification, and distribution of the project.
+Это попытка собрать настоящий мобильный агентный runtime, в котором модель — только один из компонентов, а не бог из машины.
+
+> *Из-за будущего внедрения Accessibility Service API проект потенциально не может считаться Google Play-ready приложением.*
+
+---
+
+## Для форков
+
+Форк-мейнтейнеры могут:
+
+- менять UI;
+- добавлять новые tools;
+- заменять model backend;
+- экспериментировать с Gemma / Phi / другими локальными моделями;
+- добавлять свои execution policies;
+- расширять addon-систему;
+- подключать внешний sidecar;
+- строить собственные research-бенчмарки.
+
+Но базовое правило должно сохраняться:
+
+> **Ни один model output не должен исполняться напрямую.**
+
+Если модель предлагает действие, приложение обязано проверить его через deterministic Kotlin-контур.
+
+> *В будущем планируется масштабная поддержка addon-системы без внедрения форкоделами вовнутрь исходного кода.*
+
+---
+
+## Лицензия
+
+Проект планируется как полностью открытый с открытым исходным кодом (non-Play-based).
+
+Исходный код распространяется под лицензией **Apache License 2.0**.
+
+См. файл:
+
+```
+LICENSE
+```
+
+Модельные файлы, сторонние runtime-компоненты и внешние зависимости могут иметь собственные лицензии и условия использования.
+
+---
+
+## Автор
+
+**Ksenax** — исследовательский Android / Edge-AI проект, разрабатываемый как практическая платформа для изучения локальных ИИ-агентов, Kotlin-first архитектуры, mobile tool-calling и безопасной автоматизации пользовательских сценариев.
+
+Автор проектирует и программирует это приложение в рамках личной разработки, а также курсовой и в будущем и дипломной работы.
