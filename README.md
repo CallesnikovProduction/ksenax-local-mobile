@@ -1,4 +1,8 @@
-# Ksenax — A Graphical Shell Application for Orchestrating a Local Mobile Model in Agent Mode with Restricted Tools
+![OpenKsenax Title Logo](assets/title_logo_imagegen_2_generated.png)
+
+<p align="center"> <img alt="Android" src="https://img.shields.io/badge/platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white"> <img alt="Kotlin" src="https://img.shields.io/badge/language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white"> <img alt="Jetpack Compose" src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white"> <img alt="Local First" src="https://img.shields.io/badge/architecture-local--first-black?style=for-the-badge"> <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge"> </p>
+
+# OpenKsenax — Android-Оркестратор со специфичной графической оболочкой на базе локальных больших языковых моделей (LLM) в режиме агента с ограниченными инструментами.
 
 ## Что за проект? Зачем нужен?
 
