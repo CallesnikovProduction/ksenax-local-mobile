@@ -26,7 +26,7 @@ foreground-session и не выполняет навигацию.
 Правильный поток:
 
 ```text
-application state
+chat/addon state
     -> adapter в вызывающем presentation-контуре
     -> KsenaxModelVerificationUiState
     -> KsenaxModelVerificationOverlay
@@ -46,6 +46,14 @@ ui/main/chat/KsenaxModelVerificationUiMapper.kt
 ```text
 ui/controllers/modelvalidation
 ```
+
+## Переиспользование для addons
+
+Host-сценарии model-provider/addon-management могут подавать в этот оверлей
+свой `KsenaxModelVerificationUiState`. Самостоятельный addon APK не может
+импортировать Compose-код из app-модуля через IPC-границу: если понадобится
+одинаковый UI внутри внешних APK, presentation-модуль нужно вынести в отдельную
+Android library, не передавая Compose-классы через Binder.
 
 ## Правила изменений
 

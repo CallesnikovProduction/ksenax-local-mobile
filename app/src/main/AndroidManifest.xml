@@ -7,10 +7,24 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <permission
+        android:name="dev.openksenax.permission.BIND_ADDON_MANAGEMENT"
+        android:protectionLevel="signature" />
+
+    <uses-permission
+        android:name="dev.openksenax.permission.BIND_ADDON_MANAGEMENT" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
+    <queries>
+        <intent>
+            <action android:name="dev.openksenax.action.ADDON_SERVICE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".KsenaxAndroidApplication"
@@ -22,6 +36,33 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.OpenKsenax">
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.addon.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/addon_file_paths" />
+        </provider>
+
+        <!--
+          Addons may use independent signing keys, so a host-signature
+          permission would reject legitimate callers. The service performs
+          live Binder UID/package/certificate authorization via registry.
+        -->
+        <service
+            android:name=".addons.modelprovider.OpenKsenaxModelProviderService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+
+            <intent-filter>
+                <action
+                    android:name="dev.openksenax.action.MODEL_PROVIDER" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".download.platform.ModelDownloadCompletionReceiver"

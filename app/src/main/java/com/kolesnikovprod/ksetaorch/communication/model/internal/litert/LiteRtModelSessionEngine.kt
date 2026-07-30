@@ -211,7 +211,8 @@ internal class LiteRtModelSessionEngine(
                 val text = createConversation(request.systemInstruction).use { oneShotConversation ->
                     try {
                         when (request.profile) {
-                            KsenaxModelTaskProfile.ROUTER              -> {
+                            KsenaxModelTaskProfile.ROUTER,
+                            KsenaxModelTaskProfile.TEXT_GENERATION     -> {
                                 val responseText = StringBuilder()
                                 oneShotConversation.sendMessageAsync(request.prompt)
                                     .collect { message ->
@@ -498,9 +499,9 @@ internal class LiteRtModelSessionEngine(
     /**
      * Проверяет request для one-shot model call.
      *
-     * Stateless путь принимает router-запросы и voice transcription. Chat
-     * отклоняется здесь, чтобы обычная переписка не потеряла историю из-за
-     * случайного вызова [askStateless].
+     * Stateless путь принимает router-запросы, addon text generation и
+     * voice transcription. Chat отклоняется здесь, чтобы обычная переписка не
+     * потеряла историю из-за случайного вызова [askStateless].
      *
      * @since 0.2
      * @author Stephan Kolesnikov
@@ -510,6 +511,11 @@ internal class LiteRtModelSessionEngine(
 
         when (request.profile) {
             KsenaxModelTaskProfile.ROUTER -> {
+                requirePrompt(request)
+                requireNoVoiceMessage(request)
+            }
+
+            KsenaxModelTaskProfile.TEXT_GENERATION -> {
                 requirePrompt(request)
                 requireNoVoiceMessage(request)
             }

@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "KsetaOrchestration"
 include(":app")
+include(":addon-contract")

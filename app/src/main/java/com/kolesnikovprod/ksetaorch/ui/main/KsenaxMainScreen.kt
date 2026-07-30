@@ -1,7 +1,13 @@
 package com.kolesnikovprod.ksetaorch.ui.main
 
 import android.Manifest
+import android.app.Activity
 import android.annotation.SuppressLint
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,6 +17,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,9 +29,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -32,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -42,6 +53,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.AnimatedContent
 import com.kolesnikovprod.ksetaorch.R
+import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogEffect
+import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogScreen
+import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogViewModel
+import dev.openksenax.addons.contract.AddonId
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.hasRecordAudioPermission
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.rememberMicrophonePermissionLauncher
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.rememberWorkingFolderLauncher
@@ -62,6 +77,8 @@ import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.rememberKsenaxSidePanelRev
 import com.kolesnikovprod.ksetaorch.ui.main.topbar.PixelTopBar
 import com.kolesnikovprod.ksetaorch.ui.theme.visuals
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 
 /**
@@ -92,6 +109,8 @@ import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
  * самостоятельно.
  *
  * @param viewModel текущий владелец содержательного состояния главного экрана.
+ * @param addonCatalogViewModel владелец registry/management-состояния экрана
+ *        аддонов; не передаёт в UI PackageManager или catalog DTO.
  * @param modifier внешний модификатор корневого контейнера.
  *
  * @since 0.2
@@ -101,6 +120,7 @@ import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
 @Composable
 fun KsenaxMainScreen(
     viewModel:  KsenaxMainViewModel,
+    addonCatalogViewModel: AddonCatalogViewModel,
     appVersion: Float,
     onBasicChatRequested: (String) -> Unit,
     onBasicChatSelected: (Long) -> Unit,
@@ -118,6 +138,7 @@ fun KsenaxMainScreen(
 
     val uiState = viewModel.uiState
     val theme = uiState.settingsUiState.savedSnapshot.themeId.visuals
+    val addonCatalogUiState by addonCatalogViewModel.uiState.collectAsState()
     val activeChat = uiState.activeChat
 
 
@@ -162,6 +183,10 @@ fun KsenaxMainScreen(
         236.dp.toPx()
     }
 
+    val addonsPanelEdgeWidthPx = with(LocalDensity.current) {
+        72.dp.toPx()
+    }
+
     /*
      * ╦            ╔═════════════════════╗
      * ╠════════════╬▢  LOCAL UI STATE  ▢╣
@@ -173,6 +198,50 @@ fun KsenaxMainScreen(
     }
 
     val sidePanelState = rememberKsenaxSidePanelRevealState()
+
+    var isAddonsPanelOpen by remember {
+        mutableStateOf(false)
+    }
+
+    var addonsPanelRevealProgress by remember {
+        mutableFloatStateOf(0f)
+    }
+
+    val addonsScreenWidthPx = remember {
+        mutableFloatStateOf(1f)
+    }
+
+    var addonsPanelSettleJob by remember {
+        mutableStateOf<Job?>(null)
+    }
+
+    val addonsPanelAnimationScope = rememberCoroutineScope()
+
+    fun settleAddonsPanel(
+        open: Boolean,
+        onSettled: () -> Unit = {},
+    ) {
+        addonsPanelSettleJob?.cancel()
+        if (open) {
+            isAddonsPanelOpen = true
+        }
+        addonsPanelSettleJob = addonsPanelAnimationScope.launch {
+            animate(
+                initialValue = addonsPanelRevealProgress,
+                targetValue = if (open) 1f else 0f,
+                animationSpec = spring(
+                    dampingRatio = 0.88f,
+                    stiffness = Spring.StiffnessLow,
+                ),
+            ) { value, _ ->
+                addonsPanelRevealProgress = value
+            }
+            if (!open) {
+                isAddonsPanelOpen = false
+            }
+            onSettled()
+        }
+    }
 
     var bottomBarHeight by remember {
         mutableStateOf(BottomBarDefaultMeasuredHeight)
@@ -186,6 +255,10 @@ fun KsenaxMainScreen(
 
     var isProductInfoOverlayVisible by rememberSaveable {
         mutableStateOf(false)
+    }
+
+    var pendingUninstallAddonIdValue by rememberSaveable {
+        mutableStateOf<String?>(null)
     }
 
     /*
@@ -204,6 +277,20 @@ fun KsenaxMainScreen(
         viewModel::onWorkingFolderSelected
     )
 
+    val addonUninstallLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val addonId = pendingUninstallAddonIdValue
+            ?.let(::AddonId)
+        pendingUninstallAddonIdValue = null
+        if (addonId != null) {
+            addonCatalogViewModel.onUninstallSystemUiResult(
+                addonId = addonId,
+                succeeded = result.resultCode == Activity.RESULT_OK,
+            )
+        }
+    }
+
 
     /*
      * ╦            ╔══════════════════╗
@@ -218,6 +305,45 @@ fun KsenaxMainScreen(
         }
     }
 
+    LaunchedEffect(activeChat) {
+        if (activeChat != null) {
+            addonsPanelSettleJob?.cancel()
+            isAddonsPanelOpen = false
+            addonsPanelRevealProgress = 0f
+            addonCatalogViewModel.closeManagement()
+        }
+    }
+
+    LaunchedEffect(isAddonsPanelOpen) {
+        if (isAddonsPanelOpen) {
+            addonCatalogViewModel.refresh()
+        }
+    }
+
+    LaunchedEffect(addonCatalogViewModel, context) {
+        addonCatalogViewModel.effects.collect { effect ->
+            when (effect) {
+                is AddonCatalogEffect.OpenAndroidIntent ->
+                    context.startActivity(effect.intent)
+
+                is AddonCatalogEffect.ConfirmAddonUninstall -> {
+                    pendingUninstallAddonIdValue =
+                        effect.addonId.value
+                    try {
+                        addonUninstallLauncher.launch(effect.intent)
+                    } catch (error: Exception) {
+                        pendingUninstallAddonIdValue = null
+                        addonCatalogViewModel
+                            .onUninstallSystemUiLaunchFailed(
+                                addonId = effect.addonId,
+                                message = error.message,
+                            )
+                    }
+                }
+            }
+        }
+    }
+
     /*
      * Способ сказать Compose: «пока этот экран существует, сделай что-то;
      * а когда экран исчезнет — обязательно убери это».
@@ -227,11 +353,13 @@ fun KsenaxMainScreen(
     DisposableEffect(
         context,
         lifecycleOwner,
+        addonCatalogViewModel,
     ) {
         val observer = LifecycleEventObserver { _, event ->
             // нас интересует только момент возвращения пользователя на контекстный экран.
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasMicPermission = context.hasRecordAudioPermission()
+                addonCatalogViewModel.onHostResumed()
             }
         }
 
@@ -254,18 +382,41 @@ fun KsenaxMainScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .dragSidePanelHorizontally(
-                enabled = !sidePanelState.isOpen,
-                isOpen = false,
-                onDragStarted = sidePanelState::onDragStarted,
-                onDragDelta = { dragDeltaX ->
+            .onSizeChanged { size ->
+                addonsScreenWidthPx.floatValue =
+                    size.width.toFloat().coerceAtLeast(1f)
+            }
+            .dragMainPanelsHorizontally(
+                enabled = !sidePanelState.isOpen && !isAddonsPanelOpen,
+                addonOpeningEnabled = activeChat == null,
+                onAddonDragStarted = {
+                    addonsPanelSettleJob?.cancel()
+                },
+                onAddonDragDelta = { dragDeltaX ->
+                    addonsPanelRevealProgress = (
+                        addonsPanelRevealProgress -
+                            dragDeltaX / addonsScreenWidthPx.floatValue
+                    ).coerceIn(0f, 1f)
+                },
+                onAddonDragFinished = {
+                    settleAddonsPanel(
+                        open = addonsPanelRevealProgress >= 0.28f,
+                    )
+                },
+                onAddonDragCancelled = {
+                    settleAddonsPanel(open = false)
+                },
+                onSidePanelDragStarted = sidePanelState::onDragStarted,
+                onSidePanelDragDelta = { dragDeltaX ->
                     sidePanelState.onDragDelta(
                         dragDeltaX = dragDeltaX,
                         panelWidthPx = sidePanelWidthPx,
                     )
                 },
-                onDragFinished = sidePanelState::onDragFinished,
-                onDragCancelled = sidePanelState::onDragCancelled,
+                onSidePanelDragFinished =
+                    sidePanelState::onDragFinished,
+                onSidePanelDragCancelled =
+                    sidePanelState::onDragCancelled,
             ),
     ) {
         /*
@@ -446,6 +597,50 @@ fun KsenaxMainScreen(
             },
         )
 
+        AddonCatalogScreen(
+            state = addonCatalogUiState,
+            theme = theme,
+            revealProgress = addonsPanelRevealProgress,
+            onDismiss = {
+                addonCatalogViewModel.closeManagement()
+                settleAddonsPanel(open = false)
+            },
+            onRefresh = addonCatalogViewModel::refresh,
+            onSelectAddon = addonCatalogViewModel::selectAddon,
+            onCloseManagement = addonCatalogViewModel::closeManagement,
+            onOpenAddon = addonCatalogViewModel::openAddon,
+            onInstallAddon = addonCatalogViewModel::install,
+            onShowInfo = addonCatalogViewModel::showInfo,
+            onCheckForUpdates =
+                addonCatalogViewModel::checkForUpdates,
+            onUninstallAddon = addonCatalogViewModel::uninstall,
+            onDismissInfo = addonCatalogViewModel::dismissInfo,
+            modifier = Modifier
+                .fillMaxSize()
+                .dragAddonsPanelHorizontally(
+                    enabled = isAddonsPanelOpen,
+                    activationWidthPx = addonsPanelEdgeWidthPx,
+                    canStartAnywhere = true,
+                    onDragStarted = {
+                        addonsPanelSettleJob?.cancel()
+                    },
+                    onDragDelta = { dragDeltaX ->
+                        addonsPanelRevealProgress = (
+                            addonsPanelRevealProgress -
+                                dragDeltaX / addonsScreenWidthPx.floatValue
+                        ).coerceIn(0f, 1f)
+                    },
+                    onDragFinished = {
+                        settleAddonsPanel(
+                            open = addonsPanelRevealProgress > 0.72f,
+                        )
+                    },
+                    onDragCancelled = {
+                        settleAddonsPanel(open = true)
+                    },
+                ),
+        )
+
         /*
          * ╦            ╔═══════════════════════╗
          * ╠════════════╬▢  DOWNLOAD OVERLAY  ▢╣
@@ -484,6 +679,108 @@ fun KsenaxMainScreen(
         }
     }
 }
+
+/**
+ * Единожды распределяет горизонтальный жест главного экрана между панелями.
+ *
+ * Свайп вправо синхронно раскрывает левую панель, движение влево — экран
+ * аддонов. Оба жеста могут начинаться из центральной области экрана. Detector
+ * принимает поток только после горизонтального touch-slop, поэтому не ломает
+ * вертикальную прокрутку.
+ *
+ * @since 0.3
+ */
+internal fun Modifier.dragMainPanelsHorizontally(
+    enabled: Boolean,
+    addonOpeningEnabled: Boolean,
+    onAddonDragStarted: () -> Unit,
+    onAddonDragDelta: (Float) -> Unit,
+    onAddonDragFinished: () -> Unit,
+    onAddonDragCancelled: () -> Unit,
+    onSidePanelDragStarted: () -> Unit,
+    onSidePanelDragDelta: (Float) -> Unit,
+    onSidePanelDragFinished: () -> Unit,
+    onSidePanelDragCancelled: () -> Unit,
+): Modifier {
+    if (!enabled) return this
+
+    return pointerInput(
+        enabled,
+        addonOpeningEnabled,
+    ) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var target: MainPanelDragTarget? = null
+
+            val dragStart = awaitHorizontalTouchSlopOrCancellation(
+                pointerId = down.id,
+            ) { change, overSlop ->
+                target = when {
+                    addonOpeningEnabled && overSlop < 0f ->
+                        MainPanelDragTarget.ADDONS
+                    overSlop > 0f ->
+                        MainPanelDragTarget.SIDE_PANEL
+                    else -> null
+                }
+
+                when (target) {
+                    MainPanelDragTarget.ADDONS -> {
+                        change.consume()
+                        onAddonDragStarted()
+                        onAddonDragDelta(overSlop)
+                    }
+                    MainPanelDragTarget.SIDE_PANEL -> {
+                        change.consume()
+                        onSidePanelDragStarted()
+                        onSidePanelDragDelta(overSlop)
+                    }
+                    null -> Unit
+                }
+            }
+
+            val acceptedTarget = target
+            if (dragStart == null || acceptedTarget == null) {
+                return@awaitEachGesture
+            }
+
+            val completed = horizontalDrag(dragStart.id) { change ->
+                val dragAmount = change.positionChange().x
+                if (dragAmount == 0f) return@horizontalDrag
+
+                change.consume()
+                when (acceptedTarget) {
+                    MainPanelDragTarget.ADDONS ->
+                        onAddonDragDelta(dragAmount)
+                    MainPanelDragTarget.SIDE_PANEL ->
+                        onSidePanelDragDelta(dragAmount)
+                }
+            }
+
+            when (acceptedTarget) {
+                MainPanelDragTarget.ADDONS -> {
+                    if (completed) {
+                        onAddonDragFinished()
+                    } else {
+                        onAddonDragCancelled()
+                    }
+                }
+                MainPanelDragTarget.SIDE_PANEL -> {
+                    if (completed) {
+                        onSidePanelDragFinished()
+                    } else {
+                        onSidePanelDragCancelled()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private enum class MainPanelDragTarget {
+    ADDONS,
+    SIDE_PANEL,
+}
+
 /**
  * Привязывает левую панель к горизонтальному движению пальца.
  *
@@ -512,6 +809,83 @@ internal fun Modifier.dragSidePanelHorizontally(
                 pointerId = down.id,
             ) { change, overSlop ->
                 if (isOpen || overSlop > 0f) {
+                    dragAccepted = true
+                    change.consume()
+                    onDragStarted()
+                    onDragDelta(overSlop)
+                }
+            }
+
+            if (dragStart == null || !dragAccepted) {
+                return@awaitEachGesture
+            }
+
+            val completed = horizontalDrag(dragStart.id) { change ->
+                val dragAmount = change.positionChange().x
+                if (dragAmount != 0f) {
+                    change.consume()
+                    onDragDelta(dragAmount)
+                }
+            }
+
+            if (completed) {
+                onDragFinished()
+            } else {
+                onDragCancelled()
+            }
+        }
+    }
+}
+
+/**
+ * Привязывает раскрытие правой панели аддонов к движению пальца от правого края.
+ *
+ * В отличие от порогового swipe жест сообщает каждый горизонтальный delta во
+ * время drag. Presentation-слой переводит его в reveal progress, поэтому панель
+ * движется синхронно с пальцем. После отпускания вызывающий слой выбирает anchor.
+ *
+ * @param enabled разрешено ли распознавать жест на текущем главном экране.
+ * @param activationWidthPx ширина чувствительной зоны у правого края.
+ * @param canStartAnywhere разрешает закрывающему жесту начинаться в любой точке
+ * уже открытого экрана.
+ * @param onDragStarted начало допустимого edge-drag.
+ * @param onDragDelta очередное горизонтальное смещение в пикселях.
+ * @param onDragFinished завершение горизонтального жеста.
+ * @param onDragCancelled отмена активного drag.
+ *
+ * @since 0.3
+ */
+internal fun Modifier.dragAddonsPanelHorizontally(
+    enabled: Boolean,
+    activationWidthPx: Float,
+    canStartAnywhere: Boolean = false,
+    onDragStarted: () -> Unit,
+    onDragDelta: (Float) -> Unit,
+    onDragFinished: () -> Unit,
+    onDragCancelled: () -> Unit,
+): Modifier {
+    if (!enabled) {
+        return this
+    }
+
+    return pointerInput(enabled, activationWidthPx, canStartAnywhere) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val isEligibleStart = canStartAnywhere ||
+                down.position.x >= size.width - activationWidthPx
+
+            if (!isEligibleStart) {
+                waitForUpOrCancellation()
+                return@awaitEachGesture
+            }
+
+            var dragAccepted = false
+            val dragStart = awaitHorizontalTouchSlopOrCancellation(
+                pointerId = down.id,
+            ) { change, overSlop ->
+                val directionAccepted =
+                    canStartAnywhere || overSlop < 0f
+                if (directionAccepted) {
                     dragAccepted = true
                     change.consume()
                     onDragStarted()
