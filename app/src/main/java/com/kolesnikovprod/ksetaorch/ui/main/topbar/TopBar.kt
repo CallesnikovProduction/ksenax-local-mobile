@@ -19,9 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 
 @Composable
 fun PixelTopBar(
+    theme: KsenaxThemeVisuals,
     isSidePanelOpen: Boolean = false,
     selectedMode: ChatMode?,
     activeChatMode: ChatMode?,
@@ -44,6 +46,7 @@ fun PixelTopBar(
             .padding(top = 16.dp, bottom = 10.dp),
     ) {
         PixelMenuButton(
+            brush = theme.controlsBrush,
             rotation = menuRotation,
             onClick = onMenuClick,
             modifier = Modifier.align(Alignment.TopStart),
@@ -51,6 +54,7 @@ fun PixelTopBar(
 
         if (activeChatMode == null) {
             PixelChatModeSelect(
+                theme = theme,
                 selectedMode = selectedMode,
                 onModeSelected = onModeSelected,
                 modifier = Modifier.align(Alignment.TopEnd),
@@ -73,6 +77,7 @@ fun PixelTopBar(
         ) {
             if (activeChatMode != null) {
                 PixelChatModeBadge(
+                    theme = theme,
                     mode = activeChatMode,
                     chatTitle = activeChatTitle,
                 )

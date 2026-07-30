@@ -13,11 +13,12 @@ import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredChat
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredChatMode
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredMessage
 import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxAgentRuntimeController
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaVerificationResult
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaVerificationStage
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxModelIntegrityVerifier
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationResult
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationStage
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelIntegrityVerifier
 import com.kolesnikovprod.ksetaorch.ui.main.model.toPresentationChat
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSupportedTextModel
+import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelFailureStage
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelGateState
 import kotlinx.coroutines.CancellationException
@@ -34,7 +35,6 @@ import kotlinx.coroutines.withContext
 
 private const val ChatTitleMaxLength = 48
 private const val ActiveChatIdStateKey = "agentic_chat_active_chat_id"
-private const val ModelPreparedConfirmationMillis = 260L
 
 /**
  * Presentation-контур реального агентного диалога.
@@ -51,7 +51,7 @@ class KsenaxAgenticChatViewModel(
     private val chatRepository: KsenaxChatRepository,
     private val workspaceController: KsenaxAgentRuntimeController,
     private val integrityController: KsenaxModelIntegrityVerifier,
-    private val modelTitle: String,
+    val modelTitle: String,
 ) : ViewModel() {
 
     private val mutableUiState = MutableStateFlow(
@@ -145,7 +145,11 @@ class KsenaxAgenticChatViewModel(
             KsenaxBasicModelGateState.Idle ->
                 startModelVerification(messageText, isInitialMessage = false)
             KsenaxBasicModelGateState.Ready ->
-                runTurn(messageText, isInitialMessage = false)
+                if (integrityController.isVerifiedInCurrentSession()) {
+                    runTurn(messageText, isInitialMessage = false)
+                } else {
+                    startModelVerification(messageText, isInitialMessage = false)
+                }
             else -> Unit
         }
     }
@@ -162,7 +166,6 @@ class KsenaxAgenticChatViewModel(
                 modelGateState = KsenaxBasicModelGateState.Idle,
             )
         }
-        effectChannel.trySend(KsenaxAgenticChatEffect.ExitToMain)
     }
 
     fun onChatSelected(chatId: Long) {
@@ -259,7 +262,7 @@ class KsenaxAgenticChatViewModel(
                     mutableUiState.update {
                         it.copy(modelGateState = KsenaxBasicModelGateState.ModelPrepared)
                     }
-                    delay(ModelPreparedConfirmationMillis)
+                    delay(KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS)
                     mutableUiState.update {
                         it.copy(modelGateState = KsenaxBasicModelGateState.Ready)
                     }

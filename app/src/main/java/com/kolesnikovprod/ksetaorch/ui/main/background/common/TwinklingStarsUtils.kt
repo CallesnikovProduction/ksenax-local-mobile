@@ -45,18 +45,6 @@ private data class RandomStarSparkle(
 )
 
 /**
- * Палитра цветов звёзд, выбирается на рандом.
- *
- * @since 0.2
- */
-private val SparkleColors = listOf(
-    Color.White,
-    Color(0xFF2731F5), Color(0xFF454DED),  Color(0xFF656AEB), Color(0xFFAAABE5),
-    Color(0xFF1AA338), Color(0xFF3CB556),  Color(0xFF74CC88), Color(0xFFA2E0D6),
-    Color(0xFFB51D72), Color(0xFFB53E81),  Color(0xFFC775A5), Color(0xFFD494BB)
-)
-
-/**
  * Максимально допустимое число звёзд на экране
  *
  * @since 0.2
@@ -85,12 +73,15 @@ private const val MaxSpawnDelayMillis = 720L
  */
 @Composable
 internal fun TwinklingStarsLayer(
+    sparkleColors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
-    val sparkles = remember { mutableStateListOf<RandomStarSparkle>() }
+    val sparkles = remember(sparkleColors) {
+        mutableStateListOf<RandomStarSparkle>()
+    }
     var frameTimeMillis by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(sparkleColors) {
         while (true) {
             frameTimeMillis = withFrameMillis { it }
             sparkles.removeAll { sparkle ->
@@ -100,7 +91,7 @@ internal fun TwinklingStarsLayer(
     }
 
     // Генератор новых звёздочек
-    LaunchedEffect(Unit) {
+    LaunchedEffect(sparkleColors) {
         while (true) {
             delay(Random.nextLong(
                 MinSpawnDelayMillis,
@@ -111,7 +102,10 @@ internal fun TwinklingStarsLayer(
             val burstCount = if (Random.nextFloat() < DoubleBurstChance) 2 else 1
 
             repeat(burstCount) {
-                sparkles += randomStarSparkle(startMillis)
+                sparkles += randomStarSparkle(
+                    startMillis = startMillis,
+                    sparkleColors = sparkleColors,
+                )
             }
 
             while (sparkles.size > MaxSparkles) {
@@ -202,13 +196,16 @@ internal fun TwinklingStarsLayer(
  *
  * @since 0.2
  */
-private fun randomStarSparkle(startMillis: Long): RandomStarSparkle {
+private fun randomStarSparkle(
+    startMillis: Long,
+    sparkleColors: List<Color>,
+): RandomStarSparkle {
     return RandomStarSparkle(
         // Не у краёв экрана
         x              = Random.nextFloatIn(0.04f, 0.96f),
         // Чтобы звёзды не лезли в scenic-зону
         y              = Random.nextFloatIn(0.04f, 0.78f),
-        color          = SparkleColors.random(),
+        color          = sparkleColors.random(),
         startMillis    = startMillis,
         // Звезда живет меньше полутора секунд
         durationMillis = Random.nextLong(680L, 1_260L),

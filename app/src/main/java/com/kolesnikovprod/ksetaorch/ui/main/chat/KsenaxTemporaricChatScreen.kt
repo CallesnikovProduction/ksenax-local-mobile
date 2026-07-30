@@ -6,13 +6,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,15 +32,19 @@ import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.hasRecordAudioPermiss
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.rememberMicrophonePermissionLauncher
 import com.kolesnikovprod.ksetaorch.ui.main.background.KsenaxMainBackground
 import com.kolesnikovprod.ksetaorch.ui.main.bottombar.GlowingBottomBar
+import com.kolesnikovprod.ksetaorch.ui.main.bottombar.common.BottomBarDefaultMeasuredHeight
+import com.kolesnikovprod.ksetaorch.ui.main.download.minimizedDownloadPresentation
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
-import com.kolesnikovprod.ksetaorch.ui.main.openSidePanelOnRightSwipe
-import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlay
-import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxModelVerificationOverlay
+import com.kolesnikovprod.ksetaorch.ui.main.dragSidePanelHorizontally
+import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlayHost
+import com.kolesnikovprod.ksetaorch.ui.main.overlays.modelvalidation.KsenaxModelVerificationOverlayHost
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSettingsPage
 import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.KsenaxSidePanel
+import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.rememberKsenaxSidePanelRevealState
 import com.kolesnikovprod.ksetaorch.ui.main.topbar.PixelTopBar
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
+import com.kolesnikovprod.ksetaorch.ui.theme.visuals
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelGateState
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.temporaric.KsenaxTemporaricChatEffect
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.temporaric.KsenaxTemporaricChatViewModel
@@ -70,15 +72,18 @@ fun KsenaxTemporaricChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val mainUiState = mainViewModel.uiState
+    val theme = mainUiState.settingsUiState.savedSnapshot.themeId.visuals
     val context = LocalContext.current
-    val sidePanelSwipeThresholdPx = with(LocalDensity.current) {
-        84.dp.toPx()
+    val sidePanelWidthPx = with(LocalDensity.current) {
+        236.dp.toPx()
     }
     var hasMicPermission by remember(context) {
         mutableStateOf(context.hasRecordAudioPermission())
     }
-    var isSidePanelOpen by remember { mutableStateOf(false) }
-    var bottomBarHeight by remember { mutableStateOf(152.dp) }
+    val sidePanelState = rememberKsenaxSidePanelRevealState()
+    var bottomBarHeight by remember {
+        mutableStateOf(BottomBarDefaultMeasuredHeight)
+    }
 
     val micPermissionLauncher = rememberMicrophonePermissionLauncher(
         context = context,
@@ -107,9 +112,14 @@ fun KsenaxTemporaricChatScreen(
         }
     }
 
+    val cancelVerificationAndExit = {
+        viewModel.onCancelVerification()
+        onExitToMain()
+    }
+
     BackHandler {
         if (uiState.isScreenBlocked) {
-            viewModel.onCancelVerification()
+            cancelVerificationAndExit()
         } else {
             viewModel.onExitRequested()
         }
@@ -118,9 +128,24 @@ fun KsenaxTemporaricChatScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
+            .dragSidePanelHorizontally(
+                enabled = !sidePanelState.isOpen &&
+                    !uiState.isScreenBlocked,
+                isOpen = false,
+                onDragStarted = sidePanelState::onDragStarted,
+                onDragDelta = { dragDeltaX ->
+                    sidePanelState.onDragDelta(
+                        dragDeltaX = dragDeltaX,
+                        panelWidthPx = sidePanelWidthPx,
+                    )
+                },
+                onDragFinished = sidePanelState::onDragFinished,
+                onDragCancelled = sidePanelState::onDragCancelled,
+            ),
     ) {
         KsenaxMainBackground(
+            theme = theme,
             showScenicOverlay = uiState.activeChat == null,
             modifier = Modifier.fillMaxSize(),
         )
@@ -138,6 +163,7 @@ fun KsenaxTemporaricChatScreen(
             },
             bottomBar = {
                 GlowingBottomBar(
+                    theme = theme,
                     value = uiState.inputText,
                     onValueChange = viewModel::onInputTextChanged,
                     hasMicPermission = hasMicPermission,
@@ -160,13 +186,17 @@ fun KsenaxTemporaricChatScreen(
                     isInputEnabled = !uiState.isScreenBlocked,
                     showMicButton = true,
                     onStopClick = viewModel::onStopGeneration,
+                    downloadPresentation =
+                        mainUiState.minimizedDownloadPresentation(),
+                    onDownloadClick =
+                        mainViewModel::onExpandDownloadOverlayClick,
                     onHeightChanged = { height -> bottomBarHeight = height },
                 )
             },
         ) { innerPadding ->
-            val activeChat = uiState.activeChat
-            if (activeChat != null) {
+            uiState.activeChat?.let { activeChat ->
                 KsenaxChatScreen(
+                    theme = theme,
                     chat = activeChat,
                     showThinkingIndicator = uiState.isAwaitingAssistantText,
                     bottomBarHeight = bottomBarHeight,
@@ -174,25 +204,20 @@ fun KsenaxTemporaricChatScreen(
                         top = innerPadding.calculateTopPadding(),
                     ),
                 )
-            } else {
-                Text(
-                    text = "TEMPORARIC_PATTERN chat готов",
-                    color = Color(0xFF9A8869),
-                    fontFamily = KsenaxFontFamily.tiny5,
-                    fontSize = 17.sp,
-                    modifier = Modifier.align(Alignment.Center),
-                )
             }
         }
 
         KsenaxSidePanel(
-            isOpen = isSidePanelOpen,
-            onDismiss = { isSidePanelOpen = false },
+            theme = theme,
+            isOpen = sidePanelState.isOpen ||
+                sidePanelState.revealProgress > 0f,
+            revealProgress = sidePanelState.revealProgress,
+            onDismiss = sidePanelState::close,
             chats = mainUiState.chats,
             activeChatId = null,
             activeChatMode = ChatMode.Temporaric,
             onChatSelected = { chat ->
-                isSidePanelOpen = false
+                sidePanelState.snapClosed()
                 viewModel.onLeaveForNavigation()
                 when (chat.mode) {
                     ChatMode.Basic -> onBasicChatSelected(chat.id)
@@ -203,31 +228,35 @@ fun KsenaxTemporaricChatScreen(
             onRenameChat = mainViewModel::onRenameChat,
             onDeleteChat = mainViewModel::onDeleteChat,
             onNewChatClick = {
-                isSidePanelOpen = false
+                sidePanelState.snapClosed()
                 viewModel.onNewChatClick()
             },
             onSettingsClick = {
-                isSidePanelOpen = false
+                sidePanelState.snapClosed()
                 viewModel.onLeaveForNavigation()
                 onSettingsRequested(KsenaxSettingsPage.Main)
             },
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        Box(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .width(34.dp)
-                .fillMaxHeight()
-                .openSidePanelOnRightSwipe(
-                    enabled = !isSidePanelOpen && !uiState.isScreenBlocked,
-                    thresholdPx = sidePanelSwipeThresholdPx,
-                    onOpen = { isSidePanelOpen = true },
+                .fillMaxSize()
+                .dragSidePanelHorizontally(
+                    enabled = sidePanelState.isOpen,
+                    isOpen = true,
+                    onDragStarted = sidePanelState::onDragStarted,
+                    onDragDelta = { dragDeltaX ->
+                        sidePanelState.onDragDelta(
+                            dragDeltaX = dragDeltaX,
+                            panelWidthPx = sidePanelWidthPx,
+                        )
+                    },
+                    onDragFinished = sidePanelState::onDragFinished,
+                    onDragCancelled = sidePanelState::onDragCancelled,
                 ),
         )
 
         PixelTopBar(
-            isSidePanelOpen = isSidePanelOpen,
+            theme = theme,
+            isSidePanelOpen = sidePanelState.isOpen ||
+                sidePanelState.revealProgress > 0f,
             selectedMode = ChatMode.Temporaric,
             activeChatMode = ChatMode.Temporaric,
             activeChatTitle = "RAM ONLY",
@@ -238,7 +267,7 @@ fun KsenaxTemporaricChatScreen(
                 }
             },
             onMenuClick = {
-                isSidePanelOpen = !isSidePanelOpen
+                sidePanelState.toggle()
             },
         )
 
@@ -249,7 +278,7 @@ fun KsenaxTemporaricChatScreen(
             Text(
                 text = uiState.errorMessage.orEmpty(),
                 color = Color(0xFF9B8490),
-                fontFamily = KsenaxFontFamily.tiny5,
+                fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                 fontSize = 13.sp,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -257,37 +286,17 @@ fun KsenaxTemporaricChatScreen(
             )
         }
 
-        KsenaxModelVerificationOverlay(
-            state = uiState.modelGateState,
-            onCancel = viewModel::onCancelVerification,
-            onOpenSupportedModels = {
-                isSidePanelOpen = false
-                onSettingsRequested(KsenaxSettingsPage.ResponseModel)
-            },
+        KsenaxModelVerificationOverlayHost(
+            theme = theme,
+            state = uiState.modelGateState.toModelVerificationUiState(),
+            modelName = viewModel.modelTitle,
+            onCancel = cancelVerificationAndExit,
             modifier = Modifier.fillMaxSize(),
         )
 
-        KsenaxDownloadOverlay(
-            state                       = mainUiState.modelDownloadOverlayState,
-            target                      = mainUiState.activeInstallOverlayTarget,
-            progress                    = mainUiState.activeInstallProgress,
-            allowOverMeteredNetwork     = mainUiState.allowDownloadOverMeteredNetwork,
-            allowOverRoaming            = mainUiState.allowDownloadOverRoaming,
-            isCancelConfirmationVisible = mainUiState.isCancelDownloadConfirmationVisible,
-            onAllowOverMeteredNetworkChange =
-                mainViewModel::onAllowDownloadOverMeteredNetworkChange,
-            onAllowOverRoamingChange =
-                mainViewModel::onAllowDownloadOverRoamingChange,
-            onInstallClick       =
-                mainViewModel::onInstallModelClick,
-            onBackClick          =
-                mainViewModel::onDismissModelOfferClick,
-            onCancelClick        =
-                mainViewModel::onCancelDownloadClick,
-            onConfirmCancelClick =
-                mainViewModel::onConfirmCancelDownloadClick,
-            onKeepDownloadClick  =
-                mainViewModel::onKeepDownloadClick,
+        KsenaxDownloadOverlayHost(
+            viewModel = mainViewModel,
+            theme = theme,
             modifier = Modifier.fillMaxSize(),
         )
     }

@@ -1,11 +1,7 @@
 package com.kolesnikovprod.ksetaorch.ui.main.sidepanel
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,27 +47,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.kolesnikovprod.ksetaorch.R
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelWideFrame
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxChat
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
 import com.kolesnikovprod.ksetaorch.ui.main.model.toChatPanelTitle
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import kotlin.math.min
 
 private const val SidePanelAnimationMillis = 220
-private val SidePanelIconColor = Color(0xFF92889D)
 private val RenameActionColor = Color(0xFF9299A6)
 private val DeleteActionColor = Color(0xFFFF756B)
-private val SidePanelIconBrush = Brush.linearGradient(
-    listOf(
-        SidePanelIconColor,
-        SidePanelIconColor,
-    ),
-)
 
 @Composable
 fun KsenaxSidePanel(
+    theme: KsenaxThemeVisuals,
     isOpen: Boolean,
+    revealProgress: Float? = null,
     onDismiss: () -> Unit,
     chats: List<KsenaxChat>,
     activeChatId: Long?,
@@ -86,41 +79,32 @@ fun KsenaxSidePanel(
 ) {
     val scrimInteractionSource = remember { MutableInteractionSource() }
     var renameTarget by remember { mutableStateOf<KsenaxChat?>(null) }
+    val fallbackProgress by animateFloatAsState(
+        targetValue = if (isOpen) 1f else 0f,
+        animationSpec = tween(durationMillis = SidePanelAnimationMillis),
+        label = "side_panel_fallback_progress",
+    )
+    val progress = (revealProgress ?: fallbackProgress).coerceIn(0f, 1f)
 
     Box(
         modifier = modifier.fillMaxSize(),
     ) {
-        AnimatedVisibility(
-            visible = isOpen,
-            enter = fadeIn(animationSpec = tween(durationMillis = SidePanelAnimationMillis)),
-            exit = fadeOut(animationSpec = tween(durationMillis = SidePanelAnimationMillis)),
-            modifier = Modifier.matchParentSize(),
-        ) {
+        if (progress > 0f) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.46f))
+                    .background(
+                        Color.Black.copy(alpha = 0.46f * progress),
+                    )
                     .clickable(
                         interactionSource = scrimInteractionSource,
                         indication = null,
                         onClick = onDismiss,
                     ),
             )
-        }
 
-        AnimatedVisibility(
-            visible = isOpen,
-            enter = slideInHorizontally(
-                initialOffsetX = { fullWidth -> -fullWidth },
-                animationSpec = tween(durationMillis = SidePanelAnimationMillis),
-            ) + fadeIn(animationSpec = tween(durationMillis = 120)),
-            exit = slideOutHorizontally(
-                targetOffsetX = { fullWidth -> -fullWidth },
-                animationSpec = tween(durationMillis = SidePanelAnimationMillis),
-            ) + fadeOut(animationSpec = tween(durationMillis = 140)),
-            modifier = Modifier.align(Alignment.CenterStart),
-        ) {
             SidePanelContent(
+                theme = theme,
                 chats = chats,
                 activeChatId = activeChatId,
                 activeChatMode = activeChatMode,
@@ -129,11 +113,16 @@ fun KsenaxSidePanel(
                 onDeleteChat = onDeleteChat,
                 onNewChatClick = onNewChatClick,
                 onSettingsClick = onSettingsClick,
+                modifier = Modifier.graphicsLayer {
+                    translationX = size.width * (progress - 1f)
+                    alpha = 0.72f + 0.28f * progress
+                },
             )
         }
 
         renameTarget?.let { chat ->
             RenameChatDialog(
+                theme = theme,
                 chat = chat,
                 onDismiss = { renameTarget = null },
                 onRename = { newTitle ->
@@ -147,6 +136,7 @@ fun KsenaxSidePanel(
 
 @Composable
 private fun SidePanelContent(
+    theme: KsenaxThemeVisuals,
     chats: List<KsenaxChat>,
     activeChatId: Long?,
     activeChatMode: ChatMode?,
@@ -158,8 +148,6 @@ private fun SidePanelContent(
     modifier: Modifier = Modifier,
 ) {
     val panelInteractionSource = remember { MutableInteractionSource() }
-    val settingsInteractionSource = remember { MutableInteractionSource() }
-    val newChatInteractionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
@@ -195,7 +183,7 @@ private fun SidePanelContent(
                 Text(
                     text = "У вас пока нет активных чатов",
                     color = Color(0xFF6F7C8A),
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 16.sp,
                     lineHeight = 20.sp,
                     textAlign = TextAlign.Center,
@@ -203,6 +191,7 @@ private fun SidePanelContent(
             }
         } else {
             ChatHistoryList(
+                theme = theme,
                 chats = chats,
                 activeChatId = activeChatId,
                 activeChatMode = activeChatMode,
@@ -224,27 +213,28 @@ private fun SidePanelContent(
                 .padding(start = 24.dp, bottom = 28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                painter = painterResource(R.drawable.soft_ic_settings),
-                contentDescription = "settings",
-                tint = SidePanelIconColor,
+            KsenaxPressableBox(
+                onClick = onSettingsClick,
                 modifier = Modifier
                     .size(44.dp)
-                    .offset(x = (-5).dp, y = 1.dp)
-                    .clickable(
-                        interactionSource = settingsInteractionSource,
-                        indication = null,
-                        onClick = onSettingsClick,
-                    ),
-            )
+                    .offset(x = (-5).dp, y = 1.dp),
+                contentAlignment = Alignment.Center,
+            ) { pressed ->
+                Icon(
+                    painter = painterResource(R.drawable.sidepanel_settings),
+                    contentDescription = "settings",
+                    tint = theme.mutedColor.whileKsenaxPressed(pressed),
+                    modifier = Modifier.size(38.dp),
+                )
+            }
 
             Box(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
                 PixelNewChatButton(
+                    brush = theme.controlsBrush,
                     onClick = onNewChatClick,
-                    interactionSource = newChatInteractionSource,
                     modifier = Modifier.size(width = 86.dp, height = 32.dp)
                         .offset(y = 1.dp),
                 )
@@ -255,6 +245,7 @@ private fun SidePanelContent(
 
 @Composable
 private fun ChatHistoryList(
+    theme: KsenaxThemeVisuals,
     chats: List<KsenaxChat>,
     activeChatId: Long?,
     activeChatMode: ChatMode?,
@@ -272,6 +263,7 @@ private fun ChatHistoryList(
         chats.forEach { chat ->
             val chatKey = "${chat.mode.name}:${chat.id}"
             ChatHistoryItem(
+                theme = theme,
                 chat = chat,
                 isActive = chat.id == activeChatId && chat.mode == activeChatMode,
                 onClick = { onChatSelected(chat) },
@@ -299,6 +291,7 @@ private fun ChatHistoryList(
 
 @Composable
 private fun ChatHistoryItem(
+    theme: KsenaxThemeVisuals,
     chat: KsenaxChat,
     isActive: Boolean,
     onClick: () -> Unit,
@@ -309,22 +302,18 @@ private fun ChatHistoryItem(
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+            .height(44.dp),
         contentAlignment = Alignment.CenterStart,
-    ) {
+    ) { pressed ->
+        val pressedBrush = theme.modeBrush(chat.mode).whileKsenaxPressed(pressed)
+
         if (isActive) {
             PixelWideFrame(
-                brush = chat.mode.activeGradient,
+                brush = pressedBrush,
                 modifier = Modifier.matchParentSize(),
                 backgroundColor = Color(0xF20A0E18),
             )
@@ -333,7 +322,7 @@ private fun ChatHistoryItem(
         Text(
             text = chat.title.toChatPanelTitle(),
             color = Color.White,
-            fontFamily = KsenaxFontFamily.tiny5,
+            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
             fontSize = 14.sp,
             lineHeight = 15.sp,
             maxLines = 1,
@@ -345,26 +334,22 @@ private fun ChatHistoryItem(
                     onDrawWithContent {
                         drawContent()
                         drawRect(
-                            brush = chat.mode.activeGradient,
+                            brush = pressedBrush,
                             blendMode = BlendMode.SrcAtop,
                         )
                     }
                 },
         )
 
-        Box(
+        KsenaxPressableBox(
+            onClick = onActionMenuClick,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .size(width = 38.dp, height = 40.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onActionMenuClick,
-                ),
+                .size(width = 38.dp, height = 40.dp),
             contentAlignment = Alignment.Center,
-        ) {
+        ) { actionsPressed ->
             PixelChatActionsDots(
-                brush = chat.mode.activeGradient,
+                brush = theme.modeBrush(chat.mode).whileKsenaxPressed(actionsPressed),
                 modifier = Modifier.size(width = 4.dp, height = 18.dp),
             )
 
@@ -393,33 +378,42 @@ private fun ChatActionsMenu(
         tonalElevation = 0.dp,
         shadowElevation = 5.dp,
     ) {
-        DropdownMenuItem(
-            text = {
+        KsenaxPressableBox(
+            onClick = onRenameClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) { pressed ->
                 Text(
                     text = "Rename",
-                    color = RenameActionColor,
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    color = RenameActionColor.whileKsenaxPressed(pressed),
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 15.sp,
                 )
-            },
-            onClick = onRenameClick,
-        )
-        DropdownMenuItem(
-            text = {
+        }
+        KsenaxPressableBox(
+            onClick = onDeleteClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) { pressed ->
                 Text(
                     text = "Delete",
-                    color = DeleteActionColor,
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    color = DeleteActionColor.whileKsenaxPressed(pressed),
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 15.sp,
                 )
-            },
-            onClick = onDeleteClick,
-        )
+        }
     }
 }
 
 @Composable
 private fun RenameChatDialog(
+    theme: KsenaxThemeVisuals,
     chat: KsenaxChat,
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
@@ -436,7 +430,7 @@ private fun RenameChatDialog(
                 .height(164.dp),
         ) {
             PixelWideFrame(
-                brush = chat.mode.activeGradient,
+                brush = theme.modeBrush(chat.mode),
                 backgroundColor = Color(0xFF080C14),
                 modifier = Modifier.fillMaxSize(),
             )
@@ -449,7 +443,7 @@ private fun RenameChatDialog(
                 Text(
                     text = "Rename chat",
                     color = RenameActionColor,
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 16.sp,
                 )
 
@@ -462,7 +456,7 @@ private fun RenameChatDialog(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     PixelWideFrame(
-                        brush = chat.mode.activeGradient,
+                        brush = theme.modeBrush(chat.mode),
                         backgroundColor = Color(0xFF050710),
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -472,7 +466,7 @@ private fun RenameChatDialog(
                         singleLine = true,
                         textStyle = TextStyle(
                             color = Color.White,
-                            fontFamily = KsenaxFontFamily.tiny5,
+                            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                             fontSize = 15.sp,
                         ),
                         modifier = Modifier
@@ -487,29 +481,29 @@ private fun RenameChatDialog(
                     modifier = Modifier.align(Alignment.End),
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(18.dp),
                 ) {
-                    Text(
-                        text = "Cancel",
-                        color = RenameActionColor,
-                        fontFamily = KsenaxFontFamily.tiny5,
-                        fontSize = 15.sp,
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismiss,
-                        ),
-                    )
-                    Text(
-                        text = "Rename",
-                        color = if (canRename) Color.White else Color(0xFF505764),
-                        fontFamily = KsenaxFontFamily.tiny5,
-                        fontSize = 15.sp,
-                        modifier = Modifier.clickable(
-                            enabled = canRename,
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onRename(title) },
-                        ),
-                    )
+                    KsenaxPressableBox(
+                        onClick = onDismiss,
+                    ) { pressed ->
+                        Text(
+                            text = "Cancel",
+                            color = RenameActionColor.whileKsenaxPressed(pressed),
+                            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+                            fontSize = 15.sp,
+                        )
+                    }
+                    KsenaxPressableBox(
+                        onClick = { onRename(title) },
+                        enabled = canRename,
+                    ) { pressed ->
+                        Text(
+                            text = "Rename",
+                            color = (
+                                if (canRename) Color.White else Color(0xFF505764)
+                            ).whileKsenaxPressed(pressed),
+                            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+                            fontSize = 15.sp,
+                        )
+                    }
                 }
             }
         }
@@ -538,20 +532,19 @@ private fun PixelChatActionsDots(
 
 @Composable
 private fun PixelNewChatButton(
+    brush: Brush,
     onClick: () -> Unit,
-    interactionSource: MutableInteractionSource,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick,
-        ),
+    KsenaxPressableBox(
+        onClick = onClick,
+        modifier = modifier,
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedBrush = brush.whileKsenaxPressed(pressed)
+
         PixelWideFrame(
-            brush = SidePanelIconBrush,
+            brush = pressedBrush,
             modifier = Modifier.matchParentSize(),
             backgroundColor = Color(0xF2050710),
         )
@@ -563,12 +556,12 @@ private fun PixelNewChatButton(
             val arm = plusPixel * 2f
 
             drawRect(
-                color = SidePanelIconColor,
+                brush = pressedBrush,
                 topLeft = Offset(centerX - plusPixel / 2f, centerY - arm - plusPixel / 2f),
                 size = Size(plusPixel, arm * 2f + plusPixel),
             )
             drawRect(
-                color = SidePanelIconColor,
+                brush = pressedBrush,
                 topLeft = Offset(centerX - arm - plusPixel / 2f, centerY - plusPixel / 2f),
                 size = Size(arm * 2f + plusPixel, plusPixel),
             )

@@ -1,7 +1,5 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,18 +26,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelToggleIcon
 import com.kolesnikovprod.ksetaorch.ui.components.pixelToggleStateBrush
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.main.background.KsenaxMainBackground
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.alternativeMainGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 
 @Composable
 fun AppSettingsScreen(
+    theme: KsenaxThemeVisuals,
     state: KsenaxSettingsUiState,
     onBackRequested: () -> Unit,
     onSaveClick: () -> Unit,
+    onThemeSwitcherClick: () -> Unit,
     onVoiceModelPickerClick: () -> Unit,
     onResponseModelPickerClick: () -> Unit,
     onContextWindowSelected: (KsenaxContextWindow) -> Unit,
@@ -60,6 +61,7 @@ fun AppSettingsScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         KsenaxMainBackground(
+            theme = theme,
             showScenicOverlay = false,
             modifier = Modifier.fillMaxSize(),
         )
@@ -70,6 +72,7 @@ fun AppSettingsScreen(
                 .statusBarsPadding(),
         ) {
             AppSettingsTopBar(
+                theme = theme,
                 hasUnsavedChanges = state.hasUnsavedChanges,
                 onBackClick = onBackRequested,
                 onSaveClick = onSaveClick,
@@ -91,9 +94,9 @@ fun AppSettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     GradientIcon(
-                        drawableId = R.drawable.soft_ic_settings,
+                        drawableId = R.drawable.sidepanel_settings,
                         contentDescription = null,
-                        brush = sunsetBottomBarGradientBrush,
+                        brush = theme.controlsBrush,
                         modifier = Modifier
                             .size(80.dp)
                             .offset(y = (-16).dp),
@@ -105,8 +108,8 @@ fun AppSettingsScreen(
                         text = "APP SETTINGS",
                         fontSize = 40.sp,
                         lineHeight = 35.sp,
-                        brush = alternativeMainGradientBrush,
-                        fontFamily = KsenaxFontFamily.jersey10,
+                        brush = theme.settingsBrush,
+                        fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
                         modifier = Modifier.offset(y = (-4).dp),
                     )
 
@@ -114,8 +117,8 @@ fun AppSettingsScreen(
 
                     Text(
                         text = "Основные параметры",
-                        color = Color(0xFF817A9A),
-                        fontFamily = KsenaxFontFamily.minecraftFont,
+                        color = theme.mutedColor,
+                        fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
                         fontSize = 11.sp,
                     )
 
@@ -132,25 +135,34 @@ fun AppSettingsScreen(
                         } else {
                             Color(0xFF8EF7C9)
                         },
-                        fontFamily = KsenaxFontFamily.minecraftFont,
+                        fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
                         fontSize = 9.sp,
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    SettingsThemeSwitcherCard(
+                        onClick = onThemeSwitcherClick,
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     SettingsSectionFrame(
-                        iconRes = R.drawable.ic_model_settings,
+                        theme = theme,
+                        iconRes = R.drawable.settings_group_models,
                         iconSize = 50.dp,
                         title = "MODELS",
                         iconModifier = Modifier.offset(x = (-9).dp),
                         titleOffsetX = (-19).dp,
                     ) {
                         SettingsValueRow(
-                            iconRes = R.drawable.ic_model_voice,
+                            theme = theme,
+                            iconRes = R.drawable.settings_group_models_voice,
                             label = "Войс-модель",
                             labelFontSize = 11.sp,
                         ) {
                             SettingsPickerButton(
+                                theme = theme,
                                 value = state.draftSnapshot.transcribingModel
                                     ?.settingsLabel
                                     ?: "Не выбрано",
@@ -158,14 +170,16 @@ fun AppSettingsScreen(
                             )
                         }
 
-                        SettingsSectionDivider()
+                        SettingsSectionDivider(color = theme.mutedColor)
 
                         SettingsValueRow(
-                            iconRes = R.drawable.ic_model_text,
+                            theme = theme,
+                            iconRes = R.drawable.settings_group_models_text,
                             label = "Текстовая модель",
                             labelFontSize = 11.sp,
                         ) {
                             SettingsPickerButton(
+                                theme = theme,
                                 value = state.draftSnapshot.responseModel
                                     ?.title
                                     ?: "Не выбрано",
@@ -177,90 +191,100 @@ fun AppSettingsScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     SettingsSectionFrame(
-                        iconRes = R.drawable.ic_behaviour_settings,
+                        theme = theme,
+                        iconRes = R.drawable.settings_group_behaviour,
                         iconSize = 29.dp,
                         title = "BEHAVIOUR",
                     ) {
                         SettingsValueRow(
-                            iconRes = R.drawable.ic_bh_context,
+                            theme = theme,
+                            iconRes = R.drawable.settings_group_behaviour_contextwindow,
                             label = "Контекстное окно (токены)",
                             labelFontSize = 9.sp,
                         ) {
                             ContextWindowPicker(
+                                theme = theme,
                                 selected = state.draftSnapshot.contextWindow,
                                 onSelected = onContextWindowSelected,
                             )
                         }
 
-                        SettingsSectionDivider()
+                        SettingsSectionDivider(color = theme.mutedColor)
 
                         SettingsValueRow(
-                            iconRes = R.drawable.soft_ic_android_permissions,
+                            theme = theme,
+                            iconRes = R.drawable.settings_group_behaviour_permissions,
                             label = "Android\nразрешения",
                             labelFontSize = 11.sp,
                         ) {
                             SettingsActionButton(
-                                text = "Развернуть",
+                                theme = theme,
+                                text = "РАСКРЫТЬ",
                                 onClick = onPermissionsClick,
                             )
                         }
 
-                        SettingsSectionDivider()
+                        SettingsSectionDivider(color = theme.mutedColor)
 
                         SettingsValueRow(
-                            iconRes = R.drawable.ic_bh_animation,
+                            theme = theme,
+                            iconRes = R.drawable.settings_group_behaviour_animation,
                             label = "Стартовая анимация",
                             labelFontSize = 11.sp,
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .clickable(
-                                        interactionSource = remember {
-                                            MutableInteractionSource()
-                                        },
-                                        indication = null,
-                                        onClick = {
-                                            onLaunchAnimationChanged(
-                                                !state.draftSnapshot
-                                                    .launchAnimationEnabled,
-                                            )
-                                        },
+                            KsenaxPressableBox(
+                                onClick = {
+                                    onLaunchAnimationChanged(
+                                        !state.draftSnapshot
+                                            .launchAnimationEnabled,
                                     )
+                                },
+                                modifier = Modifier
                                     .padding(
                                         horizontal = 5.dp,
                                         vertical = 7.dp,
                                     ),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                PixelToggleIcon(
-                                    isEnabled = state.draftSnapshot
-                                        .launchAnimationEnabled,
-                                    contentDescription = "launch animation",
-                                    modifier = Modifier.size(
-                                        width = 58.dp,
-                                        height = 28.dp,
-                                    ),
-                                )
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                GradientText(
-                                    text = if (
-                                        state.draftSnapshot
-                                            .launchAnimationEnabled
-                                    ) {
-                                        "ON"
-                                    } else {
-                                        "OFF"
-                                    },
-                                    brush = pixelToggleStateBrush(
-                                        state.draftSnapshot
+                                contentAlignment = Alignment.Center,
+                            ) { pressed ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    PixelToggleIcon(
+                                        isEnabled = state.draftSnapshot
                                             .launchAnimationEnabled,
-                                    ),
-                                    fontFamily = KsenaxFontFamily.minecraftFont,
-                                    fontSize = 11.sp,
-                                    lineHeight = 14.sp,
-                                )
+                                        enabledBrush = theme.selectedBrush
+                                            .whileKsenaxPressed(pressed),
+                                        disabledBrush = theme.inactiveBrush
+                                            .whileKsenaxPressed(pressed),
+                                        contentDescription = "launch animation",
+                                        modifier = Modifier.size(
+                                            width = 58.dp,
+                                            height = 28.dp,
+                                        ),
+                                    )
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    GradientText(
+                                        text = if (
+                                            state.draftSnapshot
+                                                .launchAnimationEnabled
+                                        ) {
+                                            "ON"
+                                        } else {
+                                            "OFF"
+                                        },
+                                        brush = pixelToggleStateBrush(
+                                            isEnabled = state.draftSnapshot
+                                                .launchAnimationEnabled,
+                                            enabledBrush = theme.selectedBrush,
+                                            disabledBrush = theme.inactiveBrush,
+                                        ).whileKsenaxPressed(pressed),
+                                        fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.sp,
+                                    )
+                                }
                             }
                         }
                     }
@@ -284,6 +308,7 @@ fun AppSettingsScreen(
 
         if (state.isExitConfirmationVisible) {
             SettingsExitConfirmationDialog(
+                theme = theme,
                 onDismiss = onDismissExitConfirmation,
                 onDiscard = onDiscardAndExit,
                 onSave = onSaveAndExit,

@@ -49,6 +49,35 @@ response-сессиям. Контроллер сериализует повто�
 UI-enum `KsenaxContextWindow` преобразуется в `tokenCount` во ViewModel.
 `communication/model` получает только `KsenaxModelRuntimeConfig`.
 
+### `KsenaxDownloadStallTracker`
+
+Получает уже опубликованные install snapshots и отмечает отсутствие движения
+`downloadedBytes` в течение двух минут. Tracker не опрашивает DownloadManager,
+не запускает отдельный speed test и использует монотонное время. Новый
+download id, движение байтов или завершение задачи сбрасывают окно простоя.
+
+### `modelvalidation`
+
+Подпакет `ui/controllers/modelvalidation` содержит файловый model gate и
+foreground-session кэш:
+
+- `KsenaxGemmaIntegrityController` последовательно проверяет наличие и
+  целостность конкретного install-target-а;
+- `KsenaxCompositeModelIntegrityVerifier` объединяет несколько обязательных
+  моделей Agentic-контура;
+- `KsenaxModelVerificationSessionRegistry` запоминает успешную проверку по
+  стабильному `KsenaxInstallTarget.id` только пока приложение находится в
+  foreground.
+- `KsenaxPostInstallValidationController` после install-handoff повторно
+  подтверждает presence/integrity через публичный install use case, проверяет
+  достижимость реального runtime через переданный probe и только затем пишет
+  результат в foreground-session registry.
+
+`KsenaxAndroidApplication` владеет единым registry. `ProcessLifecycleOwner`
+очищает его при `ON_STOP`; рекомпозиция и смена destination внутри приложения
+кэш не сбрасывают. Успешная глубокая проверка install-контура может отметить
+тот же target готовым без повторного SHA-256 чтения.
+
 ## Граница с `ViewModel`
 
 Правильный поток:

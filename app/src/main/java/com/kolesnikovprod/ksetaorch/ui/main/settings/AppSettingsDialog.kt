@@ -1,7 +1,5 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,11 +19,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.kolesnikovprod.ksetaorch.ui.components.PixelWideFrame
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.alternativeMainGradientBrush
 
 @Composable
 internal fun SettingsExitConfirmationDialog(
+    theme: KsenaxThemeVisuals,
     onDismiss: () -> Unit,
     onDiscard: () -> Unit,
     onSave: () -> Unit,
@@ -38,7 +38,7 @@ internal fun SettingsExitConfirmationDialog(
                 .height(190.dp),
         ) {
             PixelWideFrame(
-                brush = alternativeMainGradientBrush,
+                brush = theme.settingsBrush,
                 backgroundColor = Color(0xFF070B13),
                 modifier = Modifier.matchParentSize(),
             )
@@ -49,12 +49,12 @@ internal fun SettingsExitConfirmationDialog(
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                GradientText(
+                    GradientText(
                     text = "DO YOU WANNA CHANGE SETTINGS?",
                     fontSize = 22.sp,
                     lineHeight = 22.sp,
-                    brush = alternativeMainGradientBrush,
-                    fontFamily = KsenaxFontFamily.jersey10,
+                    brush = theme.settingsBrush,
+                    fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
@@ -62,7 +62,7 @@ internal fun SettingsExitConfirmationDialog(
                 Text(
                     text = "Сохранить изменения перед возвращением?",
                     color = Color(0xFFB3BAC8),
-                    fontFamily = KsenaxFontFamily.minecraftFont,
+                    fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
                     textAlign = TextAlign.Center,
@@ -85,7 +85,7 @@ internal fun SettingsExitConfirmationDialog(
                     )
                     DialogTextAction(
                         text = "Сохранить",
-                        color = Color(0xFF8EF7C9),
+                        color = theme.accentColor,
                         onClick = onSave,
                     )
                 }
@@ -100,17 +100,16 @@ private fun DialogTextAction(
     color: Color,
     onClick: () -> Unit,
 ) {
-    Text(
-        text = text,
-        color = color,
-        fontFamily = KsenaxFontFamily.minecraftFont,
-        fontSize = 9.sp,
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = Modifier
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
             .padding(vertical = 5.dp),
-    )
+    ) { pressed ->
+        Text(
+            text = text,
+            color = color.whileKsenaxPressed(pressed),
+            fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
+            fontSize = 9.sp,
+        )
+    }
 }

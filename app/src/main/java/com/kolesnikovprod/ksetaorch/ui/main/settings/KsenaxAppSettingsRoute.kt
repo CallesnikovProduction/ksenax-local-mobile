@@ -13,19 +13,24 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlay
+import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlayHost
+import com.kolesnikovprod.ksetaorch.ui.main.bottombar.KsenaxCompactDownloadBottomBar
+import com.kolesnikovprod.ksetaorch.ui.main.download.minimizedDownloadPresentation
 import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxPermissionsOverlay
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
+import com.kolesnikovprod.ksetaorch.ui.theme.visuals
 import kotlinx.coroutines.delay
 
 private const val SETTINGS_ROUTE_ENTER_MILLIS = 580
@@ -45,6 +50,7 @@ fun KsenaxAppSettingsRoute(
     modifier: Modifier = Modifier,
 ) {
     val uiState = viewModel.uiState
+    val theme = uiState.settingsUiState.savedSnapshot.themeId.visuals
     val exitSwipeThresholdPx = with(LocalDensity.current) {
         84.dp.toPx()
     }
@@ -150,9 +156,13 @@ fun KsenaxAppSettingsRoute(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             AppSettingsScreen(
+                theme = theme,
                 state = uiState.settingsUiState,
                 onBackRequested = ::requestExit,
                 onSaveClick = viewModel::onSaveSettings,
+                onThemeSwitcherClick = {
+                    activePage = KsenaxSettingsPage.Theme
+                },
                 onVoiceModelPickerClick = {
                     activePage = KsenaxSettingsPage.VoiceModel
                 },
@@ -180,9 +190,27 @@ fun KsenaxAppSettingsRoute(
             )
 
             SettingsPickerReveal(
+                visible = activePage == KsenaxSettingsPage.Theme,
+            ) {
+                ThemeSwitcherScreen(
+                    currentThemeId =
+                        uiState.settingsUiState.savedSnapshot.themeId,
+                    onBackClick = {
+                        activePage = KsenaxSettingsPage.Main
+                    },
+                    onApplyTheme = { themeId ->
+                        viewModel.onSettingsThemeApplied(themeId)
+                        activePage = KsenaxSettingsPage.Main
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            SettingsPickerReveal(
                 visible = activePage == KsenaxSettingsPage.VoiceModel,
             ) {
                 TranscribingSettingsScreen(
+                    theme = theme,
                     onBackClick = {
                         activePage = KsenaxSettingsPage.Main
                     },
@@ -199,6 +227,7 @@ fun KsenaxAppSettingsRoute(
                 visible = activePage == KsenaxSettingsPage.ResponseModel,
             ) {
                 SupportedModelsScreen(
+                    theme = theme,
                     onBackClick = {
                         activePage = KsenaxSettingsPage.Main
                     },
@@ -212,29 +241,25 @@ fun KsenaxAppSettingsRoute(
                 )
             }
 
-            KsenaxDownloadOverlay(
-                state = uiState.modelDownloadOverlayState,
-                target = uiState.activeInstallOverlayTarget,
-                progress = uiState.activeInstallProgress,
-                allowOverMeteredNetwork =
-                    uiState.allowDownloadOverMeteredNetwork,
-                allowOverRoaming = uiState.allowDownloadOverRoaming,
-                isCancelConfirmationVisible =
-                    uiState.isCancelDownloadConfirmationVisible,
-                onAllowOverMeteredNetworkChange =
-                    viewModel::onAllowDownloadOverMeteredNetworkChange,
-                onAllowOverRoamingChange =
-                    viewModel::onAllowDownloadOverRoamingChange,
-                onInstallClick = viewModel::onInstallModelClick,
-                onBackClick = viewModel::onDismissModelOfferClick,
-                onCancelClick = viewModel::onCancelDownloadClick,
-                onConfirmCancelClick =
-                    viewModel::onConfirmCancelDownloadClick,
-                onKeepDownloadClick = viewModel::onKeepDownloadClick,
+            uiState.minimizedDownloadPresentation()?.let { presentation ->
+                KsenaxCompactDownloadBottomBar(
+                    theme = theme,
+                    presentation = presentation,
+                    onClick = viewModel::onExpandDownloadOverlayClick,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding(),
+                )
+            }
+
+            KsenaxDownloadOverlayHost(
+                viewModel = viewModel,
+                theme = theme,
                 modifier = Modifier.fillMaxSize(),
             )
 
             KsenaxPermissionsOverlay(
+                theme = theme,
                 isVisible = isPermissionsOverlayVisible,
                 onDismiss = {
                     isPermissionsOverlayVisible = false

@@ -2,6 +2,7 @@ package com.kolesnikovprod.ksetaorch.ui.viewmodels
 
 import com.kolesnikovprod.ksetaorch.communication.voice.KsenaxVoiceSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallSnapshot
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.KsenaxWorkingFolderSelection
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxChat
@@ -41,6 +42,10 @@ data class KsenaxMainUiState(
     val voskInstallSnapshot:                 KsenaxInstallSnapshot           = KsenaxInstallSnapshot(),
     val activeInstallOverlayTarget:          KsenaxInstallOverlayTarget?     = null,
     val modelDownloadOverlayState:           KsenaxModelDownloadOverlayState = Hidden,
+    val isModelDownloadOverlayMinimized:      Boolean                         = false,
+    val isActiveDownloadStalled:              Boolean                         = false,
+    val postInstallVerificationTarget:        KsenaxInstallOverlayTarget?     = null,
+    val postInstallVerificationState:         KsenaxPostInstallVerificationState? = null,
     val allowDownloadOverMeteredNetwork:     Boolean                         = false,
     val allowDownloadOverRoaming:            Boolean                         = false,
     val isCancelDownloadConfirmationVisible: Boolean                         = false,
@@ -85,13 +90,20 @@ data class KsenaxMainUiState(
     val isAgenticModeSelected: Boolean
         get() = selectedMode == ChatMode.Agentic
 
-    val activeInstallProgress: Float
+    /**
+     * Snapshot активной установки независимо от конкретной модели.
+     *
+     * @since 0.3
+     */
+    val activeInstallSnapshot: KsenaxInstallSnapshot?
         get() = when (activeInstallOverlayTarget) {
-            KsenaxInstallOverlayTarget.Gemma4E2B -> gemmaInstallSnapshot.downloadProgress
+            KsenaxInstallOverlayTarget.Gemma4E2B ->
+                gemmaInstallSnapshot
             KsenaxInstallOverlayTarget.FunctionGemma270M ->
-                functionGemmaInstallSnapshot.downloadProgress
-            KsenaxInstallOverlayTarget.VoskSmallRu -> voskInstallSnapshot.downloadProgress
-            null -> 0f
+                functionGemmaInstallSnapshot
+            KsenaxInstallOverlayTarget.VoskSmallRu ->
+                voskInstallSnapshot
+            null -> null
         }
 
 
@@ -136,24 +148,28 @@ data class KsenaxMainUiState(
 enum class KsenaxModelDownloadOverlayState {
     Hidden,
     ModelOffer,
-    Downloading,
-    Unpacking,
+    Progress,
+    Completed,
 }
 
 enum class KsenaxInstallOverlayTarget(
+    val installTarget: KsenaxInstallTarget,
     val overlayTitle: String,
     val overlayDescription: String,
 ) {
     Gemma4E2B(
-        overlayTitle = "Gemma-4-E2B",
+        installTarget = KsenaxInstallTarget.GEMMA_4_E2B,
+        overlayTitle = "Gemma 4 E2B",
         overlayDescription = "Стандартная мультимодальная нейросеть",
     ),
     FunctionGemma270M(
-        overlayTitle = "FunctionGemma-270M",
+        installTarget = KsenaxInstallTarget.FUNCTION_GEMMA_270M,
+        overlayTitle = "FunctionGemma 270M",
         overlayDescription = "Компактная модель Mobile Actions",
     ),
     VoskSmallRu(
-        overlayTitle = "VOSK-SMALL-RU",
+        installTarget = KsenaxInstallTarget.VOSK_RU_SMALL,
+        overlayTitle = "Vosk",
         overlayDescription = "Лёгкая модель распознавания русской речи",
     ),
 }

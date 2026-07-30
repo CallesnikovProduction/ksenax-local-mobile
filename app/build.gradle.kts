@@ -16,8 +16,8 @@ android {
         applicationId = "com.kolesnikovprod.ksetaorch"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -49,10 +49,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.work.runtime)
     ksp(libs.androidx.room.compiler)
 
     implementation("androidx.compose.material:material-icons-extended")

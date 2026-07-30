@@ -3,8 +3,10 @@ package com.kolesnikovprod.ksetaorch.download.platform
 import android.app.DownloadManager
 import android.content.Context
 import androidx.core.net.toUri
+import com.kolesnikovprod.ksetaorch.download.domain.DownloadTransferMetricsEstimator
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadState
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadWaitReason
 import java.io.File
 import java.security.MessageDigest
 
@@ -52,6 +54,11 @@ internal class AndroidModelDownloadBackend(
      */
     private val downloadManager =
         appContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+    /**
+     * Окно фактических byte-снапшотов для сглаживания скорости и ETA.
+     */
+    private val transferMetricsEstimator = DownloadTransferMetricsEstimator()
 
     /**
      * Создаёт новую задачу загрузки модельного файла через [DownloadManager].
@@ -293,6 +300,8 @@ internal class AndroidModelDownloadBackend(
      * - [KsenaxDownloadTaskSnapshot.state] — доменное состояние загрузки;
      * - [KsenaxDownloadTaskSnapshot.reasonCode] — системный reason code,
      *   если он доступен.
+     * - [KsenaxDownloadTaskSnapshot.transferMetrics] — реальные счётчики байтов,
+     *   средняя скорость по короткому окну и ETA.
      *
      * Если задача не найдена, cursor недоступен или в результате нет обязательной
      * status-колонки, возвращается `null`.
@@ -315,28 +324,53 @@ internal class AndroidModelDownloadBackend(
             if (statusColumnIndex < 0) return null
 
             val status = it.getInt(statusColumnIndex)
-            val downloadedBytes = it.getLongOrDefault(
+            val rawDownloadedBytes = it.getLongOrDefault(
                 columnName = DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR,
                 defaultValue = 0L,
             )
-            val totalBytes = it.getLongOrDefault(
+            val rawTotalBytes = it.getLongOrDefault(
                 columnName = DownloadManager.COLUMN_TOTAL_SIZE_BYTES,
                 defaultValue = -1L,
             )
             val reasonCode = it.getIntOrNull(DownloadManager.COLUMN_REASON)
             val currentState = status.toKsenaxDownloadState()
+            val waitReason = if (
+                currentState == KsenaxDownloadState.PAUSED
+            ) {
+                reasonCode.toKsenaxDownloadWaitReason()
+            } else {
+                null
+            }
+            val totalBytes = when {
+                rawTotalBytes > 0L -> rawTotalBytes
+                currentState == KsenaxDownloadState.SUCCESSFUL &&
+                    rawDownloadedBytes > 0L -> rawDownloadedBytes
+                else -> null
+            }
+            val downloadedBytes = when {
+                currentState == KsenaxDownloadState.SUCCESSFUL && totalBytes != null ->
+                    totalBytes
+                else -> rawDownloadedBytes.coerceAtLeast(0L)
+            }
             val progress = when {
                 currentState == KsenaxDownloadState.SUCCESSFUL -> 1f
-                totalBytes > 0L -> {
+                totalBytes != null -> {
                     (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
                 }
                 else -> 0f
             }
+            val transferMetrics = transferMetricsEstimator.estimate(
+                downloadId = downloadId,
+                downloadedBytes = downloadedBytes,
+                totalBytes = totalBytes,
+            )
 
             return KsenaxDownloadTaskSnapshot(
-                progress   = progress,
-                state      = currentState,
-                reasonCode = reasonCode,
+                progress        = progress,
+                state           = currentState,
+                reasonCode      = reasonCode,
+                waitReason      = waitReason,
+                transferMetrics = transferMetrics,
             )
         }
     }
@@ -426,6 +460,20 @@ internal class AndroidModelDownloadBackend(
             DownloadManager.STATUS_SUCCESSFUL -> KsenaxDownloadState.SUCCESSFUL
             DownloadManager.STATUS_FAILED     -> KsenaxDownloadState.FAILED
             else                              -> KsenaxDownloadState.UNKNOWN
+        }
+    }
+
+    private fun Int?.toKsenaxDownloadWaitReason():
+        KsenaxDownloadWaitReason {
+        return when (this) {
+            DownloadManager.PAUSED_WAITING_TO_RETRY ->
+                KsenaxDownloadWaitReason.WAITING_TO_RETRY
+            DownloadManager.PAUSED_WAITING_FOR_NETWORK ->
+                KsenaxDownloadWaitReason.WAITING_FOR_NETWORK
+            DownloadManager.PAUSED_QUEUED_FOR_WIFI ->
+                KsenaxDownloadWaitReason.WAITING_FOR_UNMETERED_NETWORK
+            else ->
+                KsenaxDownloadWaitReason.PAUSED_BY_SYSTEM
         }
     }
 

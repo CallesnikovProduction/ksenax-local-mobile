@@ -29,6 +29,11 @@ const val NO_DOWNLOAD_ID = -1L
  * Для Vosk отражает распаковку zip-архива и перенос модели в финальную директорию.
  * @property isValidating `true`, если идет проверка локального файла.
  * @property downloadProgress прогресс задачи в диапазоне `[0f; 1f]`.
+ * @property downloadState последнее состояние системной download-задачи.
+ * @property downloadWaitReason доменная причина временной остановки передачи.
+ * @property transferMetrics фактический объём передачи, сглаженная скорость
+ * загрузки и ETA. По умолчанию содержит нулевые/неизвестные значения, поэтому
+ * существующий UI может подключать новые показатели независимо.
  * @property hasCandidate результат быстрой проверки наличия кандидата установки.
  * @property isValidInstallation результат глубокой проверки установленного артефакта.
  *
@@ -44,6 +49,9 @@ data class KsenaxInstallSnapshot(
     val preparationState:      KsenaxInstallCheckState   = KsenaxInstallCheckState.NON_CONFIRMED,
     val isValidating:          Boolean                   = false,
     val downloadProgress:      Float                     = 0f,
+    val downloadState:         KsenaxDownloadState       = KsenaxDownloadState.UNKNOWN,
+    val downloadWaitReason:    KsenaxDownloadWaitReason? = null,
+    val transferMetrics:       KsenaxDownloadTransferMetrics = KsenaxDownloadTransferMetrics(),
     val hasCandidate:          KsenaxInstallCheckState   = KsenaxInstallCheckState.NON_CONFIRMED,
     val isValidInstallation:   KsenaxInstallCheckState   = KsenaxInstallCheckState.NON_CONFIRMED,
 )

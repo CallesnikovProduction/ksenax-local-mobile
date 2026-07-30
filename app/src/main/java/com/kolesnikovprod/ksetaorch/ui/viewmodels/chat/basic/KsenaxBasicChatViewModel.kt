@@ -14,11 +14,12 @@ import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxMessageRole
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredChat
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredChatMode
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredMessage
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaIntegrityController
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaVerificationResult
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaVerificationStage
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaIntegrityController
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationResult
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationStage
 import com.kolesnikovprod.ksetaorch.ui.main.model.toPresentationChat
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSupportedTextModel
+import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.internal.appendAssistantDelta
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.internal.onActiveChatCleared
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.internal.onActiveSelected
@@ -44,7 +45,6 @@ import kotlin.time.Duration.Companion.milliseconds
 
 private const val CHAT_TITLE_MAX_LENGTH                 = 32
 private const val ACTIVE_CHAT_ID_STATE_KEY              = "basic_chat_active_chat_id"
-private const val UX_MODEL_PREPARED_CONFIRMATION_MILLIS = 250L
 
 /**
  * Presentation-оркестратор экрана обычного Basic-чата с локальной моделью.
@@ -97,7 +97,7 @@ class KsenaxBasicChatViewModel(
     private val chatRepository:      KsenaxChatRepository,
     private val chatCoordinator:     KsenaxBasicChatCoordinator,
     private val integrityController: KsenaxGemmaIntegrityController,
-    private val modelTitle:          String,
+    val modelTitle:                  String,
 ) : ViewModel() {
 
     /*
@@ -349,7 +349,10 @@ class KsenaxBasicChatViewModel(
                             )
                         }
 
-                        delay(UX_MODEL_PREPARED_CONFIRMATION_MILLIS.milliseconds)
+                        delay(
+                            KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS
+                                .milliseconds,
+                        )
 
                         mutableUiState.update { state ->
                             state.copy(modelGateState = KsenaxBasicModelGateState.Ready)
@@ -454,7 +457,14 @@ class KsenaxBasicChatViewModel(
             }
 
             KsenaxBasicModelGateState.Ready -> {
-                sendMessage(messageText, isInitialMessage = false)
+                if (integrityController.isVerifiedInCurrentSession()) {
+                    sendMessage(messageText, isInitialMessage = false)
+                } else {
+                    startModelVerification(
+                        messageText = messageText,
+                        isInitialMessage = false,
+                    )
+                }
             }
 
             // это перебор, но синтаксис Kotlin не даёт игнорировать и убрать это.
@@ -824,8 +834,9 @@ class KsenaxBasicChatViewModel(
      * Используется, когда пользователь не хочет ждать model gate: проверку наличия
      * файла, SHA-256 integrity-check или подготовку локального coordinator-а.
      * Активная verification job отменяется, временный текст стартового сообщения
-     * очищается, состояние gate возвращается в [KsenaxBasicModelGateState.Idle],
-     * после чего UI получает одноразовый эффект [KsenaxBasicChatEffect.ExitToMain].
+     * очищается, а состояние gate возвращается в
+     * [KsenaxBasicModelGateState.Idle]. Синхронный переход на главный экран
+     * выполняет вызывающий Screen в том же пользовательском callback.
      *
      * Метод не трогает generationJob: он относится именно к фазе verification /
      * preparation, то есть до запуска генерации ответа.
@@ -837,7 +848,6 @@ class KsenaxBasicChatViewModel(
         mutableUiState.update { state ->
             state.onVerificationCancelled()
         }
-        effectChannel.trySend(KsenaxBasicChatEffect.ExitToMain)
     }
 
 

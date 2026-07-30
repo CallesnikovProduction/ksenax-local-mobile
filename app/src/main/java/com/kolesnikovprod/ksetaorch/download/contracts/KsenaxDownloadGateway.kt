@@ -216,7 +216,8 @@ interface KsenaxDownloadGateway {
      *
      * Реализация должна спрятать платформенные детали вроде Android `Cursor`,
      * `DownloadManager.Query` и status-констант, отдавая наружу только
-     * [KsenaxDownloadTaskSnapshot].
+     * [KsenaxDownloadTaskSnapshot]. Вместе с состоянием снапшот переносит
+     * реальные счётчики байтов, сглаженную скорость и ETA без UI-форматирования.
      *
      * @param downloadId id задачи, полученный из [enqueue].
      * @return снимок состояния или `null`, если задача не найдена.

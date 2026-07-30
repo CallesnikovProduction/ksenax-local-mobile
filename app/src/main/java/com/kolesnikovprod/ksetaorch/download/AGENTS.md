@@ -3,7 +3,8 @@
 ## Scope
 
 This directory owns installation of local model artifacts: enqueue, progress,
-resume, cancel, local paths, preparation, validation, and deletion.
+actual transferred bytes, smoothed throughput, ETA, resume, cancel, local
+paths, process-independent completion, preparation, validation, and deletion.
 
 Default write scope is only:
 
@@ -30,13 +31,19 @@ Internal implementation types use direct natural names without the prefix:
 
 ```text
 AndroidModelDownloadBackend
-DownloadIdStore
+DownloadIdPreferencesStore
+DownloadTransferMetricsEstimator
+InstallCandidateFinalizer
 SingleFileInstallDelegate
 SingleFileModelDownloadGateway
 ModelArtifactSpec
 Gemma4E2BDownloadGateway
 FunctionGemmaDownloadGateway
 VoskRuSmallDownloadGateway
+BackgroundModelInstallScheduler
+ModelDownloadCompletionReceiver
+ModelInstallFinalizationWorker
+ModelInstallUseCaseFactory
 ```
 
 Do not add `Impl` to private/internal concrete classes when the concrete role is
@@ -48,9 +55,9 @@ Current public surface:
 KsenaxModelInstallCoordinator
 KsenaxModelInstallUseCase
 KsenaxDownloadGateway
-KsenaxDownloadEnqueuer
 KsenaxDownloadPolicy
 KsenaxDownloadTaskSnapshot
+KsenaxDownloadTransferMetrics
 KsenaxDownloadState
 KsenaxInstallSnapshot
 KsenaxInstallCheckState
@@ -73,6 +80,14 @@ ViewModel / app controller
     -> internal target gateway
     -> AndroidModelDownloadBackend
     -> Android DownloadManager + app-specific external files
+
+Android DownloadManager
+    -> ACTION_DOWNLOAD_COMPLETE
+    -> ModelDownloadCompletionReceiver
+    -> BackgroundModelInstallScheduler
+    -> ModelInstallFinalizationWorker
+    -> InstallCandidateFinalizer
+    -> KsenaxModelInstallUseCase
 ```
 
 Layers:
@@ -89,6 +104,11 @@ FunctionGemma, or Vosk. Target-specific differences belong below
 `SingleFileInstallDelegate` and `SingleFileModelDownloadGateway` are shared only
 by ready-to-run single-file artifacts. Vosk stays separate because ZIP
 preparation is real domain behavior, not single-file boilerplate.
+
+`InstallCandidateFinalizer` is the only owner of the prepare + deep-validation
+sequence. UI observation and background completion may both request
+finalization, but a target-specific process mutex serializes them. Do not add
+another unzip/checksum path to a Worker, receiver, service, or ViewModel.
 
 ## Download Lifecycle
 
@@ -135,7 +155,8 @@ install.
 <external-files>/models/<target-directory>/<artifact-file>
 ```
 
-The returned system ID is immediately persisted by `DownloadIdStore`. It means
+The returned system ID is immediately persisted by
+`DownloadIdPreferencesStore`. It means
 only "Android accepted this task", never "model installed".
 
 ### 3. Observation And Resume
@@ -149,8 +170,15 @@ This is why a process restart does not automatically lose an active download.
 `initialSnapshot()` restores the target-specific ID from preferences, and the
 caller starts observation again.
 
+UI observation is not the owner of download durability. Android
+`DownloadManager` performs the transfer in the system service and can retry
+across connectivity changes, process death, and device reboot.
+
 `AndroidModelDownloadBackend` maps platform cursor data into
-`KsenaxDownloadTaskSnapshot`:
+`KsenaxDownloadTaskSnapshot`. It preserves the real downloaded/total byte
+counters, converts temporary Android pause reasons into
+`KsenaxDownloadWaitReason`, and uses `DownloadTransferMetricsEstimator` to
+calculate effective throughput across the latest five polls:
 
 ```text
 PENDING / RUNNING / PAUSED / UNKNOWN -> keep observing
@@ -162,6 +190,43 @@ missing task                         -> mark interrupted and clear artifacts
 Progress is transfer progress only. It must not be reused as unzip or integrity
 progress.
 
+Transfer metrics are raw domain values:
+
+```text
+downloadedBytes
+totalBytes?                       # null while Android does not know it
+averageSpeedBytesPerSecond        # effective speed, not a synthetic speed test
+estimatedRemainingTimeSeconds?    # null during warm-up/stall/unknown total
+```
+
+The UI owns unit and locale formatting (`6.1 GB / 10 GB`, `MB/s`, human ETA).
+Do not move formatted strings into this contour. A separate network speed-test
+wizard is not part of install progress: ETA must use the current task's actual
+byte movement.
+
+### 3.1 Background Completion
+
+When DownloadManager reaches a terminal state, Android sends
+`ACTION_DOWNLOAD_COMPLETE` to the manifest receiver even if the app process has
+to be cold-started.
+
+`ModelDownloadCompletionReceiver` must remain non-exported. It does no file IO:
+it extracts `downloadId` and asks `BackgroundModelInstallScheduler` to enqueue
+work only when that id matches one of the target-specific saved ids.
+
+`ModelInstallFinalizationWorker` reconstructs the target use case through
+`ModelInstallUseCaseFactory`, re-queries DownloadManager, and then:
+
+```text
+SUCCESSFUL -> InstallCandidateFinalizer -> prepare + validate
+FAILED     -> clear saved id and local partial artifacts
+transient  -> bounded WorkManager retry with exponential backoff
+```
+
+The worker is deliberately not a second downloader. DownloadManager remains
+the transfer owner and its system notification remains the transfer
+notification. WorkManager owns only reliable post-download finalization.
+
 ### 4. Preparation
 
 After download success, coordinator emits:
@@ -172,6 +237,7 @@ preparationState = LOADING
 ```
 
 Then it calls `prepareInstallCandidate()` through the use-case contract.
+The call is made only through `InstallCandidateFinalizer`.
 
 For Gemma and FunctionGemma, the artifact is already a runtime `.litertlm`
 file. `SingleFileInstallDelegate` only confirms that the candidate exists.
@@ -276,9 +342,14 @@ DownloadManager status is stale. A partial ZIP must never trigger preparation.
 
 - A `downloadId` means queued, not installed.
 - `NO_DOWNLOAD_ID == -1L` means no active remembered task.
-- IDs are persisted only through `DownloadIdStore`.
-- Coordinator calls `prepareInstallCandidate()` before final validation.
+- IDs are persisted only through `DownloadIdPreferencesStore`.
+- UI and background completion share `InstallCandidateFinalizer`.
+- Finalization is serialized per target and re-checks the expected download id.
+- A superseded/cancelled task must never delete artifacts of a newer task.
 - `preparationState` reports preparation; `downloadProgress` reports transfer.
+- Transfer speed is averaged over at most five monotonic byte samples.
+- ETA is available only when total size and positive effective speed are known.
+- Unknown metrics use domain defaults (`0L` or `null`), never fake speed/ETA.
 - A model is installed only after `hasValidInstallation()` succeeds.
 - Single-file models validate exact size and SHA256 off the main thread.
 - Archive extraction runs off the main thread and defends against zip-slip.
@@ -286,6 +357,10 @@ DownloadManager status is stale. A partial ZIP must never trigger preparation.
 - Successful tasks clear only the saved ID; validated runtime files remain.
 - URLs are HTTPS and pinned to immutable revisions.
 - Model storage remains app-specific external storage.
+- Swipe-away/process death may stop UI observation but not system transfer or
+  queued background finalization.
+- Android force-stop is a hard OS boundary; no app component may continue until
+  the user launches the application again.
 
 ## Extension Checklist
 
@@ -311,8 +386,6 @@ cursor mechanics upward.
 It is not finished production infrastructure yet:
 
 - coordinator transitions are still a hand-written polling state machine;
-- preparation/validation flow exists in both local-recovery and active-download
-  branches and should eventually share one internal finalization function;
 - low-level exceptions mostly collapse into Boolean failure, so diagnostics are
   weaker than the state model;
 - `KsenaxDownloadGateway` is intentionally broad and should not grow unrelated
@@ -322,6 +395,9 @@ It is not finished production infrastructure yet:
 - coordinator transitions, persistence recovery, checksum failure, and Vosk
   extraction need focused automated tests before calling the contour
   production-hardened.
+- WorkManager completion is eventually consistent: a killed UI cannot receive
+  live snapshots, but reopening reconstructs state from saved id and validated
+  local artifacts.
 
 Do not add abstraction merely to hide these facts. Improve the concrete weak
 point when a real test, fourth artifact type, or diagnostic requirement makes
@@ -333,10 +409,15 @@ From repository root:
 
 ```powershell
 .\gradlew.bat compileDebugKotlin
+.\gradlew.bat testDebugUnitTest
 ```
 
 Also:
 
+- inspect the merged manifest for `ModelDownloadCompletionReceiver`;
+- verify WorkManager schedules only a matching saved download id;
+- test minimize, recents swipe-away, process kill, cancellation, and reopen on
+  a physical device; do not describe force-stop as survivable;
 - scan for old renamed symbols;
 - verify pinned URLs return `200` without authentication;
 - compare remote content length and SHA metadata with constants;

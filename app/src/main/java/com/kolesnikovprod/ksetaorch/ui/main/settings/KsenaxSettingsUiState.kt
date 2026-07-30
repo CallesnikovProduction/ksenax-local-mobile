@@ -1,5 +1,7 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeId
+
 /**
  * Объект представляет настройки в конкретный момент времени.
  *
@@ -10,6 +12,7 @@ package com.kolesnikovprod.ksetaorch.ui.main.settings
  * @property contextWindow выбранный размер контекстного окна.
  * По умолчанию — **4096 токенов**.
  * @property launchAnimationEnabled запускает приветственную анимацию глюка.
+ * @property themeId единственная активная тема пользовательского интерфейса.
  *
  * @author Stephan Kolesnikov
  * @since 0.2
@@ -20,6 +23,7 @@ data class KsenaxAppSettingsSnapshot(
     val responseModel:          KsenaxSupportedTextModel? = null,
     val contextWindow:          KsenaxContextWindow       = KsenaxContextWindow.Tokens4K,
     val launchAnimationEnabled: Boolean                   = true,
+    val themeId:                KsenaxThemeId              = KsenaxThemeId.MoonValley,
 )
 
 /**
@@ -71,6 +75,7 @@ enum class KsenaxContextWindow(
  */
 enum class KsenaxSettingsPage {
     Main,
+    Theme,
     VoiceModel,
     ResponseModel,
 }

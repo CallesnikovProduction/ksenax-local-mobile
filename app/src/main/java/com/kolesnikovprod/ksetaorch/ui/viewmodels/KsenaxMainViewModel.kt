@@ -11,19 +11,21 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kolesnikovprod.ksetaorch.communication.voice.KsenaxRecordedVoiceInput
 import com.kolesnikovprod.ksetaorch.communication.voice.KsenaxVoiceController
+import com.kolesnikovprod.ksetaorch.communication.voice.vosk.KsenaxVoskModelReachabilityProbe
 import com.kolesnikovprod.ksetaorch.KsenaxAndroidApplication
 import com.kolesnikovprod.ksetaorch.download.KsenaxModelInstallCoordinator
-import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallCheckState
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadPolicy
 import com.kolesnikovprod.ksetaorch.download.domain.usecases.KsenaxGemma4E2BInstallUseCase
 import com.kolesnikovprod.ksetaorch.download.domain.usecases.KsenaxFunctionGemmaInstallUseCase
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallSnapshot
-import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
 import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
-import com.kolesnikovprod.ksetaorch.download.domain.KsenaxModelFilePresenceChecker
 import com.kolesnikovprod.ksetaorch.download.domain.usecases.KsenaxVoskRuSmallInstallUseCase
 import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxModelRuntimeSettingsController
 import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxVoiceInputController
+import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxDownloadStallTracker
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxPostInstallValidationController
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxPostInstallValidationResult
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxPostInstallValidationStage
 import com.kolesnikovprod.ksetaorch.ui.helpers.KsenaxInstallCoordinatorSelector
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxChat
@@ -36,11 +38,14 @@ import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxTranscribingModelSele
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxAppSettingsSnapshot
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxContextWindow
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSettingsUiState
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeId
 import com.kolesnikovprod.ksetaorch.ui.helpers.KsenaxInstallUiStateReducer
 import com.kolesnikovprod.ksetaorch.ui.helpers.KsenaxPendingInstallAction
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.KsenaxWorkingFolderSelection
 
@@ -71,9 +76,6 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
     private val functionGemmaInstallUseCase =
         KsenaxFunctionGemmaInstallUseCase(appContext)
     private val voskInstallUseCase = KsenaxVoskRuSmallInstallUseCase(appContext)
-
-    private val modelFilePresenceChecker = KsenaxModelFilePresenceChecker(appContext)
-
 
     /*
      * ╦            ╔════════════════════════════╗
@@ -110,13 +112,58 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
      */
 
     private var installObservationJob: Job? = null
+    private var installCompletionJob: Job? = null
+    private var postInstallVerificationJob: Job? = null
+    private var voiceRecordingStartJob: Job? = null
     private var pendingInstallAction:  KsenaxPendingInstallAction? = null
     private var isRoutedChatVoiceInputActive = false
+    private val downloadStallTracker = KsenaxDownloadStallTracker()
+
+    private val postInstallValidationControllers by lazy {
+        mapOf(
+            KsenaxInstallOverlayTarget.Gemma4E2B to
+                KsenaxPostInstallValidationController(
+                    installUseCase = gemmaInstallUseCase,
+                    sessionRegistry =
+                        ksenaxApplication.modelVerificationSessionRegistry,
+                    reachabilityProbe = {
+                        ksenaxApplication.gemmaModelSession.initializeEngine()
+                    },
+                ),
+            KsenaxInstallOverlayTarget.FunctionGemma270M to
+                KsenaxPostInstallValidationController(
+                    installUseCase = functionGemmaInstallUseCase,
+                    sessionRegistry =
+                        ksenaxApplication.modelVerificationSessionRegistry,
+                    reachabilityProbe = {
+                        ksenaxApplication.functionGemmaModelSession
+                            .initializeEngine()
+                    },
+                ),
+            KsenaxInstallOverlayTarget.VoskSmallRu to
+                KsenaxPostInstallValidationController(
+                    installUseCase = voskInstallUseCase,
+                    sessionRegistry =
+                        ksenaxApplication.modelVerificationSessionRegistry,
+                    reachabilityProbe = {
+                        KsenaxVoskModelReachabilityProbe(
+                            modelDirectoryPath =
+                                voskInstallUseCase.getInstalledPath(),
+                        ).verify()
+                    },
+                ),
+        )
+    }
 
     private val voiceTranscriptionChannel = Channel<String>(Channel.BUFFERED)
     val voiceTranscriptions = voiceTranscriptionChannel.receiveAsFlow()
 
     private val initialSettingsSnapshot = readInitialSettingsSnapshot()
+    private val unresolvedInitialSettingsSnapshot =
+        initialSettingsSnapshot.copy(
+            transcribingModel = null,
+            responseModel = null,
+        )
 
 
     /*
@@ -131,11 +178,11 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
             functionGemmaInstallSnapshot =
                 installCoordinatorSelector.functionGemmaInitialSnapshot(),
             voskInstallSnapshot  = installCoordinatorSelector.voskInitialSnapshot(),
-            selectedTranscribingModel = initialSettingsSnapshot.transcribingModel,
-            selectedSupportedModel = initialSettingsSnapshot.responseModel,
+            selectedTranscribingModel = null,
+            selectedSupportedModel = null,
             settingsUiState = KsenaxSettingsUiState(
-                savedSnapshot = initialSettingsSnapshot,
-                draftSnapshot = initialSettingsSnapshot,
+                savedSnapshot = unresolvedInitialSettingsSnapshot,
+                draftSnapshot = unresolvedInitialSettingsSnapshot,
             ),
         ),
     )
@@ -254,29 +301,34 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        val transcribingModel = KsenaxTranscribingModelSelector
-            .resolveTranscribingModelForVoiceRecording(uiState)
-
-        if (!KsenaxTranscribingModelSelector.isInstalled(
-                uiState, transcribingModel)
-            ) {
-            onTranscribingModelClick(transcribingModel)
+        if (voiceRecordingStartJob?.isActive == true) {
             return
         }
 
-        val recordingProfile = transcribingModel.toVoiceRecordingProfile()
-        val outputFile = voiceController.createVoiceOutputFile(
-            savedVoicesDirPath = voiceInputController.voiceOutputDirectoryPathFor(transcribingModel),
-            profile            = recordingProfile,
-        )
+        voiceRecordingStartJob = viewModelScope.launch {
+            val transcribingModel = KsenaxTranscribingModelSelector
+                .resolveTranscribingModelForVoiceRecording(uiState)
 
-        voiceController.startRecording(
-            coroutineScope   = viewModelScope,
-            outputFile       = outputFile,
-            recordingProfile = recordingProfile,
-            onRecorded       = ::onVoiceRecorded,
-            onFailure        = ::onVoiceRecordingFailure,
-        )
+            if (!ensureTranscribingModelInstallationIsCurrent(transcribingModel)) {
+                onTranscribingModelClick(transcribingModel)
+                return@launch
+            }
+
+            val recordingProfile = transcribingModel.toVoiceRecordingProfile()
+            val outputFile = voiceController.createVoiceOutputFile(
+                savedVoicesDirPath =
+                    voiceInputController.voiceOutputDirectoryPathFor(transcribingModel),
+                profile = recordingProfile,
+            )
+
+            voiceController.startRecording(
+                coroutineScope   = viewModelScope,
+                outputFile       = outputFile,
+                recordingProfile = recordingProfile,
+                onRecorded       = ::onVoiceRecorded,
+                onFailure        = ::onVoiceRecordingFailure,
+            )
+        }
     }
 
     fun onTranscribingModelClick(model: KsenaxTranscribingModel) {
@@ -378,6 +430,23 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun onSettingsThemeApplied(themeId: KsenaxThemeId) {
+        val currentSettings = uiState.settingsUiState
+        val savedSnapshot = currentSettings.savedSnapshot.copy(themeId = themeId)
+        val draftSnapshot = currentSettings.draftSnapshot.copy(themeId = themeId)
+
+        settingsPreferences.edit()
+            .putString(THEME_ID_KEY, themeId.name)
+            .apply()
+
+        uiState = uiState.copy(
+            settingsUiState = currentSettings.copy(
+                savedSnapshot = savedSnapshot,
+                draftSnapshot = draftSnapshot,
+            ),
+        )
+    }
+
     fun onSaveSettings() {
         val snapshot = uiState.settingsUiState.draftSnapshot
         saveSettingsSnapshot(snapshot)
@@ -449,6 +518,17 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
 
     fun onInstallModelClick() {
         val target = uiState.activeInstallOverlayTarget ?: return
+        installCompletionJob?.cancel()
+        postInstallVerificationJob?.cancel()
+        downloadStallTracker.reset()
+        ksenaxApplication.modelVerificationSessionRegistry.invalidate(
+            target.installTarget.id,
+        )
+        uiState = uiState.copy(
+            isActiveDownloadStalled = false,
+            postInstallVerificationTarget = null,
+            postInstallVerificationState = null,
+        )
 
         val currentSnapshot = KsenaxInstallUiStateReducer.snapshotFor(
             uiState,
@@ -469,7 +549,7 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
             snapshot = nextSnapshot,
         )
 
-        uiState = KsenaxInstallUiStateReducer.showDownloading(uiState)
+        uiState = KsenaxInstallUiStateReducer.showProgress(uiState)
 
         observeInstallState(
             target   = target,
@@ -478,7 +558,38 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun onCancelDownloadClick() {
+        if (
+            uiState.modelDownloadOverlayState !=
+                KsenaxModelDownloadOverlayState.Progress ||
+            uiState.activeInstallSnapshot?.isDownloading != true
+        ) {
+            return
+        }
         uiState = KsenaxInstallUiStateReducer.showCancelConfirmation(uiState)
+    }
+
+    fun onMinimizeDownloadOverlayClick() {
+        if (
+            uiState.modelDownloadOverlayState !=
+                KsenaxModelDownloadOverlayState.Progress ||
+            uiState.activeInstallSnapshot?.isDownloading != true
+        ) {
+            return
+        }
+        uiState = uiState.copy(
+            isModelDownloadOverlayMinimized = true,
+            isCancelDownloadConfirmationVisible = false,
+            keyboardDismissRequestId = uiState.keyboardDismissRequestId + 1,
+        )
+    }
+
+    fun onExpandDownloadOverlayClick() {
+        if (uiState.modelDownloadOverlayState ==
+            KsenaxModelDownloadOverlayState.Hidden
+        ) {
+            return
+        }
+        uiState = uiState.copy(isModelDownloadOverlayMinimized = false)
     }
 
     fun onKeepDownloadClick() {
@@ -489,6 +600,8 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         val target = uiState.activeInstallOverlayTarget ?: return
 
         installObservationJob?.cancel()
+        installCompletionJob?.cancel()
+        downloadStallTracker.reset()
 
         val curSnapshot = KsenaxInstallUiStateReducer.snapshotFor(uiState, target)
 
@@ -502,6 +615,15 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         )
 
         uiState = KsenaxInstallUiStateReducer.showModelOffer(uiState, target)
+    }
+
+    fun onCancelPostInstallVerification() {
+        postInstallVerificationJob?.cancel()
+        postInstallVerificationJob = null
+        uiState = uiState.copy(
+            postInstallVerificationTarget = null,
+            postInstallVerificationState = null,
+        )
     }
 
 
@@ -573,6 +695,42 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         uiState = uiState.copy(voiceFailureMessage = message)
     }
 
+    private suspend fun ensureTranscribingModelInstallationIsCurrent(
+        model: KsenaxTranscribingModel,
+    ): Boolean {
+        if (KsenaxTranscribingModelSelector.isInstalled(uiState, model)) {
+            return true
+        }
+
+        val isInstalled = when (model) {
+            KsenaxTranscribingModel.Gemma ->
+                gemmaInstallUseCase.hasValidInstallation()
+            KsenaxTranscribingModel.Vosk ->
+                voskInstallUseCase.hasValidInstallation()
+        }
+
+        if (!isInstalled) {
+            return false
+        }
+
+        ksenaxApplication.modelVerificationSessionRegistry.markVerified(
+            KsenaxTranscribingModelSelector
+                .installOverlayTargetFor(model)
+                .installTarget
+                .id,
+        )
+
+        uiState = when (model) {
+            KsenaxTranscribingModel.Gemma ->
+                uiState.copy(isGemmaInstalled = true)
+            KsenaxTranscribingModel.Vosk ->
+                uiState.copy(isVoskInstalled = true)
+        }.copy(selectedTranscribingModel = model)
+        syncCommittedModelsIntoSettings()
+
+        return true
+    }
+
 
     /*
      * ╦            ╔═══════════════════╗
@@ -589,7 +747,8 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
             gemmaSnapshot.currentDownloadId != NO_DOWNLOAD_ID -> {
                 uiState = uiState.copy(
                     activeInstallOverlayTarget = KsenaxInstallOverlayTarget.Gemma4E2B,
-                    modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Downloading,
+                    modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Progress,
+                    isModelDownloadOverlayMinimized = false,
                 )
                 observeInstallState(
                     target = KsenaxInstallOverlayTarget.Gemma4E2B,
@@ -601,7 +760,8 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
                     activeInstallOverlayTarget =
                         KsenaxInstallOverlayTarget.FunctionGemma270M,
                     modelDownloadOverlayState =
-                        KsenaxModelDownloadOverlayState.Downloading,
+                        KsenaxModelDownloadOverlayState.Progress,
+                    isModelDownloadOverlayMinimized = false,
                 )
                 observeInstallState(
                     target = KsenaxInstallOverlayTarget.FunctionGemma270M,
@@ -611,7 +771,8 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
             voskSnapshot.currentDownloadId != NO_DOWNLOAD_ID -> {
                 uiState = uiState.copy(
                     activeInstallOverlayTarget = KsenaxInstallOverlayTarget.VoskSmallRu,
-                    modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Downloading,
+                    modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Progress,
+                    isModelDownloadOverlayMinimized = false,
                 )
                 observeInstallState(
                     target = KsenaxInstallOverlayTarget.VoskSmallRu,
@@ -644,20 +805,34 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         snapshot: KsenaxInstallSnapshot,
     ) {
         uiState = KsenaxInstallUiStateReducer.withSnapshot(uiState, target, snapshot)
+        uiState = uiState.copy(
+            isActiveDownloadStalled = downloadStallTracker.update(
+                targetKey = target.installTarget.id,
+                snapshot = snapshot,
+            ),
+        )
 
         when {
-            snapshot.preparationState == KsenaxInstallCheckState.LOADING &&
-                target == KsenaxInstallOverlayTarget.VoskSmallRu -> {
-                uiState = KsenaxInstallUiStateReducer.showUnpacking(uiState)
-            }
-            snapshot.isInstalled -> onModelInstalled(target)
+            snapshot.isInstalled -> onModelInstallValidated(target)
             snapshot.isInterrupted -> {
                 uiState = KsenaxInstallUiStateReducer.showModelOffer(uiState, target)
             }
         }
     }
 
-    private fun onModelInstalled(target: KsenaxInstallOverlayTarget) {
+    private fun onModelInstallValidated(target: KsenaxInstallOverlayTarget) {
+        if (installCompletionJob?.isActive == true) return
+
+        downloadStallTracker.reset()
+        uiState = KsenaxInstallUiStateReducer.showCompleted(uiState)
+        installCompletionJob = viewModelScope.launch {
+            delay(MODEL_DOWNLOAD_SUCCESS_HOLD_MILLIS)
+            completeModelInstallation(target)
+            startPostInstallVerification(target)
+        }
+    }
+
+    private fun completeModelInstallation(target: KsenaxInstallOverlayTarget) {
         val pendingAction = pendingInstallAction
         val installsForSettingsDraft = when (pendingAction) {
             is KsenaxPendingInstallAction.SelectTranscribingModel ->
@@ -676,6 +851,8 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         }.copy(
             modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Hidden,
             activeInstallOverlayTarget = null,
+            isModelDownloadOverlayMinimized = false,
+            isActiveDownloadStalled = false,
             isCancelDownloadConfirmationVisible = false,
         )
 
@@ -734,6 +911,103 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    private fun startPostInstallVerification(
+        target: KsenaxInstallOverlayTarget,
+    ) {
+        postInstallVerificationJob?.cancel()
+        uiState = uiState.copy(
+            postInstallVerificationTarget = target,
+            postInstallVerificationState =
+                KsenaxPostInstallVerificationState.CheckingPresence,
+        )
+
+        postInstallVerificationJob = viewModelScope.launch {
+            val controller = postInstallValidationControllers.getValue(target)
+            val result = controller.verify { stage ->
+                if (uiState.postInstallVerificationTarget == target) {
+                    uiState = uiState.copy(
+                        postInstallVerificationState =
+                            stage.toPostInstallUiState(),
+                    )
+                }
+            }
+
+            if (uiState.postInstallVerificationTarget != target) {
+                return@launch
+            }
+
+            when (result) {
+                KsenaxPostInstallValidationResult.Success -> {
+                    uiState = uiState.copy(
+                        postInstallVerificationState =
+                            KsenaxPostInstallVerificationState.Success,
+                    )
+                    delay(POST_INSTALL_VERIFICATION_SUCCESS_HOLD_MILLIS)
+                    if (
+                        uiState.postInstallVerificationTarget == target &&
+                        uiState.postInstallVerificationState ==
+                            KsenaxPostInstallVerificationState.Success
+                    ) {
+                        uiState = uiState.copy(
+                            postInstallVerificationTarget = null,
+                            postInstallVerificationState = null,
+                        )
+                    }
+                }
+
+                KsenaxPostInstallValidationResult.SessionExpired -> {
+                    uiState = uiState.copy(
+                        postInstallVerificationTarget = null,
+                        postInstallVerificationState = null,
+                    )
+                }
+
+                is KsenaxPostInstallValidationResult.Failure -> {
+                    uiState = uiState.copy(
+                        postInstallVerificationState =
+                            KsenaxPostInstallVerificationState.Failure(
+                                stage = result.stage.toFailureStage(),
+                                message = result.toUserMessage(target),
+                            ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun KsenaxPostInstallValidationStage.toPostInstallUiState():
+        KsenaxPostInstallVerificationState = when (this) {
+        KsenaxPostInstallValidationStage.Presence ->
+            KsenaxPostInstallVerificationState.CheckingPresence
+        KsenaxPostInstallValidationStage.Integrity ->
+            KsenaxPostInstallVerificationState.CheckingIntegrity
+        KsenaxPostInstallValidationStage.Reachability ->
+            KsenaxPostInstallVerificationState.CheckingReachability
+    }
+
+    private fun KsenaxPostInstallValidationStage.toFailureStage():
+        KsenaxPostInstallVerificationFailureStage = when (this) {
+        KsenaxPostInstallValidationStage.Presence ->
+            KsenaxPostInstallVerificationFailureStage.Presence
+        KsenaxPostInstallValidationStage.Integrity ->
+            KsenaxPostInstallVerificationFailureStage.Integrity
+        KsenaxPostInstallValidationStage.Reachability ->
+            KsenaxPostInstallVerificationFailureStage.Reachability
+    }
+
+    private fun KsenaxPostInstallValidationResult.Failure.toUserMessage(
+        target: KsenaxInstallOverlayTarget,
+    ): String = when (stage) {
+        KsenaxPostInstallValidationStage.Presence ->
+            "Файл ${target.overlayTitle} не найден после установки."
+        KsenaxPostInstallValidationStage.Integrity ->
+            "${target.overlayTitle} не прошла проверку целостности."
+        KsenaxPostInstallValidationStage.Reachability ->
+            cause?.message
+                ?.takeIf(String::isNotBlank)
+                ?: "Не удалось открыть локальный runtime."
+    }
+
 
     /*
      * ╦            ╔═══════════════════╗
@@ -743,13 +1017,28 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun refreshInstalledModelFlags() {
         viewModelScope.launch {
-            val isGemmaInstalled = hasGemmaRuntimeCandidate()
+            val isGemmaInstalled =
+                gemmaInstallUseCase.hasValidInstallation()
             val isFunctionGemmaInstalled =
-                hasFunctionGemmaRuntimeCandidate()
+                functionGemmaInstallUseCase.hasValidInstallation()
             val isVoskInstalled = voskInstallUseCase.hasValidInstallation()
+
+            listOf(
+                KsenaxInstallOverlayTarget.Gemma4E2B to isGemmaInstalled,
+                KsenaxInstallOverlayTarget.FunctionGemma270M to
+                    isFunctionGemmaInstalled,
+                KsenaxInstallOverlayTarget.VoskSmallRu to isVoskInstalled,
+            ).forEach { (target, isValid) ->
+                if (isValid) {
+                    ksenaxApplication.modelVerificationSessionRegistry
+                        .markVerified(target.installTarget.id)
+                }
+            }
+
             val selectedTranscribingModel =
                 KsenaxTranscribingModelSelector.resolveSelectedInstalledModel(
-                    currentSelection = uiState.selectedTranscribingModel,
+                    currentSelection =
+                        initialSettingsSnapshot.transcribingModel,
                     isGemmaInstalled = isGemmaInstalled,
                     isVoskInstalled = isVoskInstalled,
                 )
@@ -761,26 +1050,14 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
                 selectedTranscribingModel = selectedTranscribingModel,
                 selectedSupportedModel =
                     KsenaxSupportedTextModelSelector.resolveSelectedInstalledModel(
-                        currentSelection = uiState.selectedSupportedModel,
+                        currentSelection =
+                            initialSettingsSnapshot.responseModel,
                         isGemmaInstalled = isGemmaInstalled,
                         isFunctionGemmaInstalled = isFunctionGemmaInstalled,
                     ),
             )
             syncCommittedModelsIntoSettings()
         }
-    }
-
-    private suspend fun hasGemmaRuntimeCandidate(): Boolean {
-        return modelFilePresenceChecker.hasModelFileIn(
-            modelDirectoryName = KsenaxInstallTarget.GEMMA_4_E2B.storageDirectoryName,
-        )
-    }
-
-    private suspend fun hasFunctionGemmaRuntimeCandidate(): Boolean {
-        return modelFilePresenceChecker.hasModelFileIn(
-            modelDirectoryName =
-                KsenaxInstallTarget.FUNCTION_GEMMA_270M.storageDirectoryName,
-        )
     }
 
     private fun readSavedTranscribingModel(): KsenaxTranscribingModel? {
@@ -830,12 +1107,21 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         } else {
             legacyUiPreferences.getBoolean(LEGACY_LAUNCH_ANIMATION_ENABLED_KEY, true)
         }
+        val themeId = settingsPreferences
+            .getString(THEME_ID_KEY, null)
+            ?.let { savedName ->
+                KsenaxThemeId.entries.firstOrNull { theme ->
+                    theme.name == savedName
+                }
+            }
+            ?: KsenaxThemeId.MoonValley
 
         return KsenaxAppSettingsSnapshot(
             transcribingModel = readSavedTranscribingModel(),
             responseModel = readSavedSupportedModel(),
             contextWindow = contextWindow,
             launchAnimationEnabled = launchAnimationEnabled,
+            themeId = themeId,
         )
     }
 
@@ -846,6 +1132,7 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
                 LAUNCH_ANIMATION_ENABLED_KEY,
                 snapshot.launchAnimationEnabled,
             )
+            .putString(THEME_ID_KEY, snapshot.themeId.name)
             .apply()
 
         modelPreferences.edit().apply {
@@ -932,12 +1219,16 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
      */
 
     override fun onCleared() {
+        installObservationJob?.cancel()
+        installCompletionJob?.cancel()
+        postInstallVerificationJob?.cancel()
         voiceController.close()
         super.onCleared()
     }
 
     private companion object {
-        const val KEYBOARD_DISMISS_BEFORE_MODEL_OFFER_MILLIS = 180L
+        const val MODEL_DOWNLOAD_SUCCESS_HOLD_MILLIS = 450L
+        const val POST_INSTALL_VERIFICATION_SUCCESS_HOLD_MILLIS = 400L
         const val MODEL_PREFERENCES_NAME = "ksenax_model_preferences"
         const val SETTINGS_PREFERENCES_NAME = "ksenax_app_settings"
         const val LEGACY_UI_PREFERENCES_NAME = "ksenax_preferences"
@@ -945,6 +1236,7 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         const val PREFERRED_SUPPORTED_MODEL_KEY = "preferred_supported_model"
         const val CONTEXT_WINDOW_KEY = "context_window"
         const val LAUNCH_ANIMATION_ENABLED_KEY = "launch_animation_enabled"
+        const val THEME_ID_KEY = "theme_id"
         const val LEGACY_LAUNCH_ANIMATION_ENABLED_KEY = "launch_animation_enabled"
         const val CHAT_TITLE_MAX_LENGTH = 80
     }

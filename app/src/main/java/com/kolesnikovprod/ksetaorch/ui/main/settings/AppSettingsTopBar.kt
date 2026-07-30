@@ -1,14 +1,11 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -17,9 +14,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.kolesnikovprod.ksetaorch.ui.components.PixelSquareFrame
-import com.kolesnikovprod.ksetaorch.ui.theme.design.aquaSunsetLightBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.inactiveGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 
 @Composable
 internal fun SettingsTopScrollShadow(
@@ -65,6 +62,7 @@ internal fun SettingsTopScrollShadow(
 
 @Composable
 internal fun AppSettingsTopBar(
+    theme: KsenaxThemeVisuals,
     hasUnsavedChanges: Boolean,
     onBackClick: () -> Unit,
     onSaveClick: () -> Unit,
@@ -74,31 +72,31 @@ internal fun AppSettingsTopBar(
         modifier = modifier.height(68.dp),
     ) {
         SettingsTopBarButton(
-            brush = sunsetBottomBarGradientBrush,
+            brush = theme.controlsBrush,
             onClick = onBackClick,
             modifier = Modifier.align(Alignment.CenterStart),
-        ) {
+        ) { pressed ->
             PixelBackArrow(
-                brush = sunsetBottomBarGradientBrush,
+                brush = theme.controlsBrush.whileKsenaxPressed(pressed),
                 modifier = Modifier.size(23.dp),
             )
         }
 
         SettingsTopBarButton(
             brush = if (hasUnsavedChanges) {
-                aquaSunsetLightBrush
+                theme.selectedBrush
             } else {
-                inactiveGradientBrush
+                theme.inactiveBrush
             },
             onClick = onSaveClick,
             enabled = hasUnsavedChanges,
             modifier = Modifier.align(Alignment.CenterEnd),
-        ) {
+        ) { pressed ->
             PixelCheckMark(
                 brush = if (hasUnsavedChanges) {
-                    aquaSunsetLightBrush
+                    theme.selectedBrush.whileKsenaxPressed(pressed)
                 } else {
-                    inactiveGradientBrush
+                    theme.inactiveBrush
                 },
                 modifier = Modifier
                     .size(25.dp)
@@ -114,25 +112,21 @@ private fun SettingsTopBarButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    content: @Composable () -> Unit,
+    content: @Composable (pressed: Boolean) -> Unit,
 ) {
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
+        enabled = enabled,
         modifier = modifier
-            .size(46.dp)
-            .clickable(
-                enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+            .size(46.dp),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
         PixelSquareFrame(
-            brush = brush,
+            brush = brush.whileKsenaxPressed(pressed),
             modifier = Modifier.matchParentSize(),
             backgroundColor = Color(0xD9050810),
         )
-        content()
+        content(pressed)
     }
 }
 

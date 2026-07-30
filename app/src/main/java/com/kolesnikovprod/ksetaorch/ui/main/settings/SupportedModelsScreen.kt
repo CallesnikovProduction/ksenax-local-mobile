@@ -1,8 +1,6 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +16,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,13 +24,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.inactiveGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.mainGradient
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
 
 @Composable
 fun SupportedModelsScreen(
+    theme: KsenaxThemeVisuals,
     onBackClick: () -> Unit,
     selectedModel: KsenaxSupportedTextModel?,
     isGemmaInstalled: Boolean,
@@ -52,11 +50,15 @@ fun SupportedModelsScreen(
                 .statusBarsPadding()
                 .padding(horizontal = 18.dp),
         ) {
-            SupportedModelsTopBar(onBackClick = onBackClick)
+            SupportedModelsTopBar(
+                theme = theme,
+                onBackClick = onBackClick,
+            )
 
             Spacer(modifier = Modifier.height(14.dp))
 
             SupportedModelOption(
+                theme = theme,
                 model = KsenaxSupportedTextModel.Gemma,
                 isSelected = selectedModel == KsenaxSupportedTextModel.Gemma,
                 isInstalled = isGemmaInstalled,
@@ -66,6 +68,7 @@ fun SupportedModelsScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             SupportedModelOption(
+                theme = theme,
                 model = KsenaxSupportedTextModel.FunctionGemma,
                 isSelected =
                     selectedModel == KsenaxSupportedTextModel.FunctionGemma,
@@ -80,6 +83,7 @@ fun SupportedModelsScreen(
 
 @Composable
 private fun SupportedModelsTopBar(
+    theme: KsenaxThemeVisuals,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -89,6 +93,7 @@ private fun SupportedModelsTopBar(
             .height(66.dp),
     ) {
         PixelBackButton(
+            brush = theme.controlsBrush,
             onClick = onBackClick,
             modifier = Modifier.align(Alignment.CenterStart),
         )
@@ -97,15 +102,15 @@ private fun SupportedModelsTopBar(
             text = "Choose Response-model",
             fontSize = 14.sp,
             lineHeight = 14.sp,
-            brush = sunsetBottomBarGradientBrush,
+            brush = theme.settingsBrush,
             textAlign = TextAlign.Center,
             modifier = Modifier.align(Alignment.Center),
         )
 
         GradientIcon(
-            drawableId = R.drawable.ic_basic_llm_chat,
+            drawableId = R.drawable.tb_basic_mode,
             contentDescription = null,
-            brush = sunsetBottomBarGradientBrush,
+            brush = theme.controlsBrush,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .size(42.dp)
@@ -116,31 +121,29 @@ private fun SupportedModelsTopBar(
 
 @Composable
 private fun SupportedModelOption(
+    theme: KsenaxThemeVisuals,
     model: KsenaxSupportedTextModel,
     isSelected: Boolean,
     isInstalled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
     val optionBrush = if (isSelected && isInstalled) {
-        mainGradient
+        theme.selectedBrush
     } else {
-        inactiveGradientBrush
+        theme.inactiveBrush
     }
 
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(112.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-    ) {
+            .height(112.dp),
+    ) { pressed ->
+        val pressedBrush = optionBrush.whileKsenaxPressed(pressed)
+
         PixelTransparentButtonFrame(
-            brush = optionBrush,
+            brush = pressedBrush,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -158,16 +161,16 @@ private fun SupportedModelOption(
                     text = model.title,
                     fontSize = 14.sp,
                     lineHeight = 15.sp,
-                    brush = optionBrush,
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    brush = pressedBrush,
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                 )
 
                 Spacer(modifier = Modifier.height(7.dp))
 
                 Text(
                     text = model.description,
-                    color = Color(0xFF6F7C8A),
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    color = theme.mutedColor.whileKsenaxPressed(pressed),
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 12.sp,
                     lineHeight = 14.sp,
                 )
@@ -175,7 +178,10 @@ private fun SupportedModelOption(
 
             if (!isInstalled) {
                 Spacer(modifier = Modifier.width(14.dp))
-                PixelDownloadButton(onClick = onClick)
+                PixelDownloadButton(
+                    brush = theme.controlsBrush,
+                    onClick = onClick,
+                )
             }
         }
     }

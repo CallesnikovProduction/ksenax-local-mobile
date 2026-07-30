@@ -6,8 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,7 +27,10 @@ import com.kolesnikovprod.ksetaorch.ui.main.center.common.GradientHeroText
 import com.kolesnikovprod.ksetaorch.ui.main.center.common.PixelHeroDivider
 import com.kolesnikovprod.ksetaorch.ui.main.center.common.TypingAndroidPathLabel
 import com.kolesnikovprod.ksetaorch.ui.main.center.common.TypingPhraseText
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 
 /**
  * Главный контент в главном меню.
@@ -50,6 +50,7 @@ import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
  */
 @Composable
 fun KsenaxCenterContent(
+    theme:                  KsenaxThemeVisuals,
     isTypingStarted:       Boolean = true,
     isAgenticModeSelected: Boolean = false,
     workingFolderPath:     String,
@@ -59,12 +60,11 @@ fun KsenaxCenterContent(
     modifier:              Modifier = Modifier,
 ) {
     // для кликабельности логотипчика "KSENAX"
-    val heroInteractionSource = remember { MutableInteractionSource() }
-
     Box(
         modifier = modifier.fillMaxSize()
     ) {
         TypingAndroidPathLabel(
+            textColor = theme.mutedColor,
             path = workingFolderPath,     // отображается реальный путь
             isVisible = isAgenticModeSelected, // врубается только в agentic-режиме
             modifier = Modifier
@@ -81,18 +81,19 @@ fun KsenaxCenterContent(
                 .padding(top = 38.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            GradientHeroText(
-                text = "KSENAX",
-                modifier = Modifier.clickable(
-                    interactionSource = heroInteractionSource,
-                    indication = null, // Material-круг нажатия убираем.
-                    onClick = onLogoClick,
+            KsenaxPressableBox(
+                onClick = onLogoClick,
+            ) { pressed ->
+                GradientHeroText(
+                    text = "KSENAX",
+                    brush = theme.heroBrush.whileKsenaxPressed(pressed),
                 )
-            )
+            }
 
             Spacer(modifier = Modifier.height(5.dp))
 
             PixelHeroDivider(
+                brush = theme.heroBrush,
                 modifier = Modifier
                     .width(205.dp)
                     .height(25.dp)
@@ -101,6 +102,8 @@ fun KsenaxCenterContent(
             Spacer(modifier = Modifier.height(15.dp))
 
             TypingPhraseText(
+                textColor = theme.accentColor,
+                phrases = theme.typingPhrases,
                 isStarted = isTypingStarted,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -129,6 +132,7 @@ fun KsenaxCenterContent(
                 ),
             ) {
                 FolderActionButton(
+                    brush = theme.controlsBrush,
                     onClick = onWorkingFolderClick,
                 )
             }
@@ -140,7 +144,7 @@ fun KsenaxCenterContent(
                     Text(
                         text       = error,
                         color      = Color(0xFFE98A86),
-                        fontFamily = KsenaxFontFamily.tiny5,
+                        fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                         fontSize   = 10.sp,
                         lineHeight = 12.sp,
                         textAlign  = TextAlign.Center,

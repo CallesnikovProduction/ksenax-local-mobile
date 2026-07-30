@@ -33,9 +33,10 @@ internal fun settingsStringPageNameToEnum(name: String?): KsenaxSettingsPage {
 }
 
 @Composable internal fun rememberGeneralBackStackEntry(
-    navController: NavHostController
+    navController: NavHostController,
+    currentBackStackEntry: NavBackStackEntry,
 ): NavBackStackEntry {
-    return remember(navController) {
+    return remember(navController, currentBackStackEntry) {
         navController.getBackStackEntry(KsenaxRoutes.GENERAL)
     }
 }

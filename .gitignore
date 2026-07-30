@@ -31,6 +31,10 @@ signing.properties
 secrets.properties
 .env
 .env.*
+!.env.example
+
+# Separate addon repositories are not part of the OKx host source tree.
+/openksenax-addons/
 
 # Local model/runtime artifacts
 *.litertlm
@@ -38,13 +42,13 @@ secrets.properties
 *.onnx
 *.safetensors
 *.tflite
-models/
+/models/
 
 # Codex/local assistant workspace artifacts
 .codex/
 .agents/
+.codex-staging/
 .codex-remote-attachments/
 
 # Private research notes not prepared for the public repo yet
 metadocs/
-gpt-researches/

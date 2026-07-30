@@ -11,9 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,13 +66,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.inactiveGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxChat
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxMessage
+import com.kolesnikovprod.ksetaorch.ui.main.bottombar.common.BottomBarDefaultMeasuredHeight
 import com.kolesnikovprod.ksetaorch.ui.main.chat.formatting.KsenaxBasicMessageContent
 import com.kolesnikovprod.ksetaorch.ui.main.chat.formatting.containsCodeFence
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -89,9 +89,10 @@ private val ChatTailClearance = 36.dp
 
 @Composable
 fun KsenaxChatScreen(
+    theme: KsenaxThemeVisuals,
     chat: KsenaxChat,
     showThinkingIndicator: Boolean = false,
-    bottomBarHeight: Dp = 152.dp,
+    bottomBarHeight: Dp = BottomBarDefaultMeasuredHeight,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -182,7 +183,7 @@ fun KsenaxChatScreen(
                 ChatMessageItem(
                     message = message,
                     mode = chat.mode,
-                    brush = chat.mode.activeGradient,
+                    brush = theme.modeBrush(chat.mode),
                 )
             }
 
@@ -204,6 +205,7 @@ fun KsenaxChatScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     ThinkingIndicator(
+                        brush = theme.controlsBrush,
                         modifier = Modifier.padding(start = 8.dp, top = 2.dp),
                     )
                 }
@@ -247,7 +249,7 @@ fun KsenaxChatScreen(
                 ),
         ) {
             ChatScrollToBottomButton(
-                brush = chat.mode.activeGradient,
+                brush = theme.modeBrush(chat.mode),
                 onClick = {
                     shouldFollowStreamingTail = true
                     coroutineScope.launch {
@@ -261,6 +263,7 @@ fun KsenaxChatScreen(
 
 @Composable
 private fun ThinkingIndicator(
+    brush: Brush,
     modifier: Modifier = Modifier,
 ) {
     val shimmerProgress = remember { Animatable(-0.5f) }
@@ -291,7 +294,7 @@ private fun ThinkingIndicator(
     Text(
         text = "Немного думаю${".".repeat(dotCount)}",
         color = Color.White,
-        fontFamily = KsenaxFontFamily.epilepsySansForBasicFont,
+        fontFamily = KsenaxFontFamily.EPILEPSY_SANS,
         fontSize = 14.sp,
         lineHeight = 17.sp,
         modifier = modifier
@@ -318,7 +321,7 @@ private fun ThinkingIndicator(
                 onDrawWithContent {
                     drawContent()
                     drawRect(
-                        brush = sunsetBottomBarGradientBrush,
+                        brush = brush,
                         blendMode = BlendMode.SrcAtop,
                     )
                     if (shimmerPosition in 0f..1f) {
@@ -338,71 +341,68 @@ private fun ChatScrollToBottomButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Canvas(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .size(38.dp)
             .semantics {
                 contentDescription = "Перейти к последнему сообщению"
                 role = Role.Button
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-    ) {
-        val pixel = 2.dp.toPx()
+            },
+    ) { pressed ->
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val pressedBrush = brush.whileKsenaxPressed(pressed)
+            val pixel = 2.dp.toPx()
 
-        drawRect(
-            color = Color(0xEE03070D),
-            topLeft = Offset(pixel * 2f, 0f),
-            size = Size(size.width - pixel * 4f, size.height),
-        )
-        drawRect(
-            color = Color(0xEE03070D),
-            topLeft = Offset(0f, pixel * 2f),
-            size = Size(size.width, size.height - pixel * 4f),
-        )
-
-        drawRect(brush, Offset(pixel * 2f, 0f), Size(size.width - pixel * 4f, pixel))
-        drawRect(
-            brush,
-            Offset(pixel * 2f, size.height - pixel),
-            Size(size.width - pixel * 4f, pixel),
-        )
-        drawRect(brush, Offset(0f, pixel * 2f), Size(pixel, size.height - pixel * 4f))
-        drawRect(
-            brush,
-            Offset(size.width - pixel, pixel * 2f),
-            Size(pixel, size.height - pixel * 4f),
-        )
-
-        val arrowPixels = listOf(
-            3 to 2,
-            3 to 3,
-            3 to 4,
-            0 to 4,
-            1 to 5,
-            2 to 6,
-            3 to 7,
-            4 to 6,
-            5 to 5,
-            6 to 4,
-        )
-        val arrowPixel = 3.dp.toPx()
-        val arrowLeft = (size.width - arrowPixel * 7f) / 2f
-        val arrowTop = (size.height - arrowPixel * 8f) / 2f
-        arrowPixels.forEach { (x, y) ->
             drawRect(
-                brush = brush,
-                topLeft = Offset(
-                    x = arrowLeft + x * arrowPixel,
-                    y = arrowTop + y * arrowPixel,
-                ),
-                size = Size(arrowPixel, arrowPixel),
+                color = Color(0xEE03070D),
+                topLeft = Offset(pixel * 2f, 0f),
+                size = Size(size.width - pixel * 4f, size.height),
             )
+            drawRect(
+                color = Color(0xEE03070D),
+                topLeft = Offset(0f, pixel * 2f),
+                size = Size(size.width, size.height - pixel * 4f),
+            )
+
+            drawRect(pressedBrush, Offset(pixel * 2f, 0f), Size(size.width - pixel * 4f, pixel))
+            drawRect(
+                pressedBrush,
+                Offset(pixel * 2f, size.height - pixel),
+                Size(size.width - pixel * 4f, pixel),
+            )
+            drawRect(pressedBrush, Offset(0f, pixel * 2f), Size(pixel, size.height - pixel * 4f))
+            drawRect(
+                pressedBrush,
+                Offset(size.width - pixel, pixel * 2f),
+                Size(pixel, size.height - pixel * 4f),
+            )
+
+            val arrowPixels = listOf(
+                3 to 2,
+                3 to 3,
+                3 to 4,
+                0 to 4,
+                1 to 5,
+                2 to 6,
+                3 to 7,
+                4 to 6,
+                5 to 5,
+                6 to 4,
+            )
+            val arrowPixel = 3.dp.toPx()
+            val arrowLeft = (size.width - arrowPixel * 7f) / 2f
+            val arrowTop = (size.height - arrowPixel * 8f) / 2f
+            arrowPixels.forEach { (x, y) ->
+                drawRect(
+                    brush = pressedBrush,
+                    topLeft = Offset(
+                        x = arrowLeft + x * arrowPixel,
+                        y = arrowTop + y * arrowPixel,
+                    ),
+                    size = Size(arrowPixel, arrowPixel),
+                )
+            }
         }
     }
 }
@@ -458,6 +458,7 @@ private fun ChatMessageItem(
 
         if (mode == ChatMode.Agentic && message.isUser) {
             AgenticActionSeparator(
+                brush = brush,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .padding(top = 8.dp),
@@ -473,7 +474,7 @@ private fun ChatMessageItem(
             Text(
                 text = message.generationDurationMillis.toGenerationTimeLabel(),
                 color = Color(0xFF6F7785),
-                fontFamily = KsenaxFontFamily.tiny5,
+                fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                 fontSize = 12.sp,
                 lineHeight = 13.sp,
                 modifier = Modifier
@@ -578,9 +579,9 @@ private fun KsenaxMessageBubble(
                 fontFamily = if (
                     message.isUser && mode.usesBasicChatPresentation
                 ) {
-                    KsenaxFontFamily.epilepsySansForBasicFont
+                    KsenaxFontFamily.EPILEPSY_SANS
                 } else {
-                    KsenaxFontFamily.tiny5
+                    KsenaxFontFamily.STANDALONE_DEPARTURE_MONO
                 },
                 fontSize = 15.sp,
                 lineHeight = 18.sp,
@@ -658,7 +659,7 @@ private fun AgenticPipelineMessage(
         Text(
             text = text,
             color = Color.White,
-            fontFamily = KsenaxFontFamily.tiny5,
+            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
             fontSize = 14.sp,
             lineHeight = 17.sp,
             textAlign = TextAlign.Start,
@@ -726,6 +727,7 @@ private fun AgenticPipelineMarker(
 
 @Composable
 private fun AgenticActionSeparator(
+    brush: Brush,
     modifier: Modifier = Modifier,
 ) {
     var isVisible by remember { mutableStateOf(false) }
@@ -752,12 +754,12 @@ private fun AgenticActionSeparator(
         val segmentWidth = maxSegmentWidth * progress
 
         drawRect(
-            brush = inactiveGradientBrush,
+            brush = brush,
             topLeft = Offset(centerX - segmentWidth, centerY),
             size = Size(segmentWidth, lineHeight),
         )
         drawRect(
-            brush = inactiveGradientBrush,
+            brush = brush,
             topLeft = Offset(centerX, centerY),
             size = Size(segmentWidth, lineHeight),
         )
@@ -765,7 +767,7 @@ private fun AgenticActionSeparator(
         if (progress > 0f) {
             val centerPixel = 3.dp.toPx()
             drawRect(
-                brush = inactiveGradientBrush,
+                brush = brush,
                 topLeft = Offset(
                     x = centerX - centerPixel / 2f,
                     y = size.height / 2f - centerPixel / 2f,

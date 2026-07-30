@@ -1,8 +1,5 @@
 package com.kolesnikovprod.ksetaorch.ui.main.center.common
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -12,11 +9,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
@@ -28,10 +25,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelSquareFrame
 import com.kolesnikovprod.ksetaorch.ui.components.PixelWideFrame
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
 
 /**
  * Отображает компактную пиксельную кнопку перехода к разрешениям приложения.
@@ -45,34 +43,31 @@ import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
  */
 @Composable
 internal fun EmptyPermissionsButton(
+    brush: Brush,
     onClick : () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .size(42.dp)
             .semantics {
                 contentDescription = "android_permissions_button"
                 role               = Role.Button
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick,
-            ),
-    ) {
+            },
+    ) { pressed ->
+        val pressedBrush = brush.whileKsenaxPressed(pressed)
+
         PixelSquareFrame(
-            brush           = sunsetBottomBarGradientBrush,
+            brush           = pressedBrush,
             modifier        = Modifier.matchParentSize(),
             backgroundColor = Color(0x9903070D),
         )
 
         GradientIcon(
-            drawableId         = R.drawable.soft_ic_android_permissions,
+            drawableId         = R.drawable.settings_group_behaviour_permissions,
             contentDescription = null,
-            brush              = sunsetBottomBarGradientBrush,
+            brush              = pressedBrush,
             modifier           = Modifier
                 .size(25.dp)
                 .offset(x = 9.dp, y = 9.dp)
@@ -92,24 +87,21 @@ internal fun EmptyPermissionsButton(
  */
 @Composable
 internal fun FolderActionButton(
+    brush: Brush,
     onClick : () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .width(158.dp)
-            .height(42.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick,
-            ),
+            .height(42.dp),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedBrush = brush.whileKsenaxPressed(pressed)
+
         PixelWideFrame(
-            brush           = sunsetBottomBarGradientBrush,
+            brush           = pressedBrush,
             modifier        = Modifier.matchParentSize(),
             backgroundColor = Color(0x9903070D),
         )
@@ -124,9 +116,9 @@ internal fun FolderActionButton(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GradientIcon(
-                drawableId         = R.drawable.folder,
+                drawableId         = R.drawable.general_ic_folder,
                 contentDescription = null,
-                brush              = sunsetBottomBarGradientBrush,
+                brush              = pressedBrush,
                 modifier           = Modifier
                     .size(35.dp)
                     .offset(x = (-2).dp, y = (-2).dp),
@@ -137,7 +129,7 @@ internal fun FolderActionButton(
             Text(
                 text       = "Рабочая папка",
                 color      = Color.White, // базовая маска для наложения градиента
-                fontFamily = KsenaxFontFamily.minecraftFont,
+                fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
                 fontSize   = 9.sp,
                 lineHeight = 12.sp,
                 maxLines   = 1,
@@ -148,7 +140,7 @@ internal fun FolderActionButton(
                             drawContent()
                             // градиент рисуется поверх белой иконки там, где реально иконка
                             drawRect(
-                                brush     = sunsetBottomBarGradientBrush,
+                                brush     = pressedBrush,
                                 blendMode = BlendMode.SrcAtop,
                             )
                         }
