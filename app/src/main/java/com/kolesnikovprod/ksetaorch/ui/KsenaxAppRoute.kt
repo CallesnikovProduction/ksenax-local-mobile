@@ -239,7 +239,10 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             * */
 
             // Получаем предыдущий entry (MainViewModel)
-            val generalBackStackEntry = rememberGeneralBackStackEntry(navController)
+            val generalBackStackEntry = rememberGeneralBackStackEntry(
+                navController = navController,
+                currentBackStackEntry = backStackEntry,
+            )
 
             // Вот этот мув примерно упрощённо говорит о том, чтобы
             // ViewModel создавалась* ИЗ УЖЕ СУЩЕСТВУЮЩЕЙ
@@ -285,12 +288,17 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
          * ║  TEMPORARIC SCREEN ROUTE (TemporaricViewModel)
          * ╚═══════════════════════════════════════════════
          */
-        composable(KsenaxRoutes.Chat.TEMPORARIC_PATTERN) {
+        composable(
+            KsenaxRoutes.Chat.TEMPORARIC_PATTERN,
+        ) { backStackEntry ->
             // ручной DI
             val application = rememberKsenaxApplication()
 
             // возможность вернуться обратно
-            val generalBackStackEntry = rememberGeneralBackStackEntry(navController)
+            val generalBackStackEntry = rememberGeneralBackStackEntry(
+                navController = navController,
+                currentBackStackEntry = backStackEntry,
+            )
 
             val mainViewModel: KsenaxMainViewModel = viewModel(
                 viewModelStoreOwner = generalBackStackEntry,
@@ -354,7 +362,10 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             val initialChatId = chatIdArgument
                 .takeUnless { chatId -> chatId == KsenaxRoutes.Chat.NEW_CHAT_ID }
 
-            val generalBackStackEntry = rememberGeneralBackStackEntry(navController)
+            val generalBackStackEntry = rememberGeneralBackStackEntry(
+                navController = navController,
+                currentBackStackEntry = backStackEntry,
+            )
 
             val mainViewModel: KsenaxMainViewModel = viewModel(
                 viewModelStoreOwner = generalBackStackEntry,
@@ -421,7 +432,10 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             ),
         ) { backStackEntry ->
             val application = rememberKsenaxApplication()
-            val generalBackStackEntry = rememberGeneralBackStackEntry(navController)
+            val generalBackStackEntry = rememberGeneralBackStackEntry(
+                navController = navController,
+                currentBackStackEntry = backStackEntry,
+            )
 
             val mainViewModel: KsenaxMainViewModel = viewModel(
                 viewModelStoreOwner = generalBackStackEntry,

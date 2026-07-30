@@ -6,8 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,10 +40,12 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelWideFrame
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.inactiveGradientBrush
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import kotlinx.coroutines.delay
 
 private val ChatModeItems = listOf(
@@ -60,6 +60,7 @@ private val ChatModeDropdownRightOffset = (-158).dp
 
 @Composable
 fun PixelChatModeSelect(
+    theme: KsenaxThemeVisuals,
     selectedMode: ChatMode?,
     onModeSelected: (ChatMode) -> Unit,
     modifier: Modifier = Modifier,
@@ -81,7 +82,7 @@ fun PixelChatModeSelect(
     ) {
         PixelSelectButton(
             label = effectiveSelectedMode.label,
-            gradient = effectiveSelectedMode.activeGradient,
+            gradient = theme.modeBrush(effectiveSelectedMode),
             onClick = {
                 if (isDropdownVisible) {
                     isDropdownVisible = false
@@ -115,6 +116,7 @@ fun PixelChatModeSelect(
                     ),
             ) {
                 PixelModeDropdownWindow(
+                    theme = theme,
                     selectedMode = effectiveSelectedMode,
                     onModeSelected = { mode ->
                         onModeSelected(mode)
@@ -129,6 +131,7 @@ fun PixelChatModeSelect(
 
 @Composable
 fun PixelChatModeBadge(
+    theme: KsenaxThemeVisuals,
     mode: ChatMode,
     chatTitle: String? = null,
     modifier: Modifier = Modifier,
@@ -140,7 +143,7 @@ fun PixelChatModeBadge(
                 Text(
                     text = title,
                     color = Color(0xFF9299A6),
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 9.sp,
                     lineHeight = 10.sp,
                     maxLines = 1,
@@ -155,7 +158,7 @@ fun PixelChatModeBadge(
         Text(
             text = mode.label,
             color = Color.White,
-            fontFamily = KsenaxFontFamily.jersey10,
+            fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
             fontSize = 24.sp,
             lineHeight = 16.sp,
             textAlign = TextAlign.Center,
@@ -167,7 +170,7 @@ fun PixelChatModeBadge(
                     onDrawWithContent {
                         drawContent()
                         drawRect(
-                            brush = mode.activeGradient,
+                            brush = theme.modeBrush(mode),
                             blendMode = BlendMode.SrcAtop,
                         )
                     }
@@ -184,33 +187,25 @@ private fun PixelSelectButton(
     modifier: Modifier = Modifier,
     isClickable: Boolean = true,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val clickableModifier = if (isClickable) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick,
-        )
-    } else {
-        Modifier
-    }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
+        enabled = isClickable,
         modifier = modifier
             .width(90.dp)
-            .height(43.dp)
-            .then(clickableModifier),
+            .height(43.dp),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedBrush = gradient.whileKsenaxPressed(pressed)
+
         PixelWideFrame(
-            brush = gradient,
+            brush = pressedBrush,
             modifier = Modifier.matchParentSize(),
         )
 
         Text(
             text = label,
             color = Color.White,
-            fontFamily = KsenaxFontFamily.jersey10,
+            fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
             fontSize = if (label.length > 8) 18.sp else 22.sp,
             lineHeight = 14.sp,
             textAlign = TextAlign.Center,
@@ -221,7 +216,7 @@ private fun PixelSelectButton(
                     onDrawWithContent {
                         drawContent()
                         drawRect(
-                            brush = gradient,
+                            brush = pressedBrush,
                             blendMode = BlendMode.SrcAtop,
                         )
                     }
@@ -232,26 +227,28 @@ private fun PixelSelectButton(
 
 @Composable
 private fun PixelModeDropdownWindow(
+    theme: KsenaxThemeVisuals,
     selectedMode: ChatMode?,
     onModeSelected: (ChatMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier.height(218.dp),
+        modifier = modifier.height(205.dp),
     ) {
         PixelWideFrame(
-            brush = inactiveGradientBrush,
+            brush = theme.inactiveBrush,
             modifier = Modifier.matchParentSize(),
         )
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 11.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             ChatModeItems.forEach { mode ->
                 PixelModeOption(
+                    theme = theme,
                     mode = mode,
                     isSelected = mode == selectedMode,
                     onClick = { onModeSelected(mode) },
@@ -264,24 +261,26 @@ private fun PixelModeDropdownWindow(
 
 @Composable
 private fun PixelModeOption(
+    theme: KsenaxThemeVisuals,
     mode: ChatMode,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val optionGradient = if (isSelected) mode.activeGradient else inactiveGradientBrush
+    val optionGradient = if (isSelected) {
+        theme.modeBrush(mode)
+    } else {
+        theme.inactiveBrush
+    }
 
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
-            .height(58.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+            .height(58.dp),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedGradient = optionGradient.whileKsenaxPressed(pressed)
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -291,7 +290,7 @@ private fun PixelModeOption(
             GradientIcon(
                 drawableId = mode.icon,
                 contentDescription = null,
-                brush = optionGradient,
+                brush = pressedGradient,
                 modifier = Modifier
                     .size(
                         if (mode == ChatMode.Basic) 40.dp
@@ -318,20 +317,20 @@ private fun PixelModeOption(
             ) {
                 GradientModeText(
                     text = mode.label,
-                    brush = optionGradient,
+                    brush = pressedGradient,
                     fontSize = 22.sp,
                     lineHeight = 16.sp,
-                    fontFamily = KsenaxFontFamily.jersey10,
+                    fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
                 )
 
                 Spacer(modifier = Modifier.height(2.dp))
 
                 GradientModeText(
                     text = mode.description,
-                    brush = optionGradient,
+                    brush = pressedGradient,
                     fontSize = 8.sp,
                     lineHeight = 9.sp,
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                 )
             }
         }
@@ -369,7 +368,7 @@ private fun GradientModeText(
 
 private val ChatMode.description: String
     get() = when (this) {
-        ChatMode.Basic -> "Обычный диалог с локальной моделью\n(не для действий). По умолчанию."
-        ChatMode.Agentic -> "Агентный режим для действий\nна устройстве в рабочей папке."
-        ChatMode.Temporaric -> "Временный чат для тестирования\nсырой модели без инструкций."
+        ChatMode.Basic -> "Стандартный диалог с локальной моделью"
+        ChatMode.Agentic -> "Режим для действий\nна устройстве из рабочей папки."
+        ChatMode.Temporaric -> "Временный чат. Не регистрируется в памяти."
     }

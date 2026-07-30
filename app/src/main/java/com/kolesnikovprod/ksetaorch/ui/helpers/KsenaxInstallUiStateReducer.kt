@@ -1,6 +1,7 @@
 package com.kolesnikovprod.ksetaorch.ui.helpers
 
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallSnapshot
+import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxInstallOverlayTarget
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainUiState
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxModelDownloadOverlayState
@@ -49,58 +50,85 @@ object KsenaxInstallUiStateReducer {
         target:   KsenaxInstallOverlayTarget,
         snapshot: KsenaxInstallSnapshot,
     ): KsenaxMainUiState {
+        val previousSnapshot = snapshotFor(uiState, target)
+        val presentationSnapshot = snapshot.withRetainedTransferEstimatesFrom(
+            previousSnapshot = previousSnapshot,
+        )
+
         return when (target) {
             KsenaxInstallOverlayTarget.Gemma4E2B -> {
-                uiState.copy(gemmaInstallSnapshot = snapshot)
+                uiState.copy(gemmaInstallSnapshot = presentationSnapshot)
             }
             KsenaxInstallOverlayTarget.FunctionGemma270M -> {
-                uiState.copy(functionGemmaInstallSnapshot = snapshot)
+                uiState.copy(
+                    functionGemmaInstallSnapshot = presentationSnapshot,
+                )
             }
             KsenaxInstallOverlayTarget.VoskSmallRu -> {
-                uiState.copy(voskInstallSnapshot = snapshot)
+                uiState.copy(voskInstallSnapshot = presentationSnapshot)
             }
         }
     }
 
+    private fun KsenaxInstallSnapshot.withRetainedTransferEstimatesFrom(
+        previousSnapshot: KsenaxInstallSnapshot,
+    ): KsenaxInstallSnapshot {
+        val belongsToSameActiveDownload =
+            isDownloading &&
+                currentDownloadId != NO_DOWNLOAD_ID &&
+                currentDownloadId == previousSnapshot.currentDownloadId
+        if (!belongsToSameActiveDownload) return this
+
+        val previousMetrics = previousSnapshot.transferMetrics
+        val currentMetrics = transferMetrics
+        return copy(
+            transferMetrics = currentMetrics.copy(
+                averageSpeedBytesPerSecond =
+                    currentMetrics.averageSpeedBytesPerSecond
+                        .takeIf { bytesPerSecond -> bytesPerSecond > 0L }
+                        ?: previousMetrics.averageSpeedBytesPerSecond,
+                estimatedRemainingTimeSeconds =
+                    currentMetrics.estimatedRemainingTimeSeconds
+                        ?: previousMetrics.estimatedRemainingTimeSeconds,
+            ),
+        )
+    }
+
     /**
-     * Переводит overlay установки в состояние распаковки модели.
+     * Переводит overlay установки в единый progress-режим.
      *
-     * Сейчас это особенно полезно для Vosk, где после скачивания может быть отдельная
-     * стадия подготовки/распаковки файлов.
+     * Конкретный этап — скачивание или проверка — UI определяет по безопасному
+     * [com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallSnapshot].
      *
      * @param uiState текущее состояние главного экрана.
-     * @return состояние с unpacking overlay.
+     * @return состояние с активным progress overlay.
      *
      * @since 0.2
      * @author Stephan Kolesnikov
      */
-    fun showUnpacking(
+    fun showProgress(
         uiState: KsenaxMainUiState,
     ): KsenaxMainUiState {
         return uiState.copy(
-            modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Unpacking,
+            modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Progress,
+            isModelDownloadOverlayMinimized = false,
             isCancelDownloadConfirmationVisible = false,
         )
     }
 
     /**
-     * Переводит overlay установки в состояние активного скачивания.
+     * Показывает короткий финальный handoff после успешной install-валидации.
      *
-     * Метод также прячет подтверждение отмены, потому что при нормальном переходе
-     * к скачиванию confirmation-dialog не должен оставаться открытым.
-     *
-     * @param uiState текущее состояние главного экрана.
-     * @return состояние с активным downloading overlay.
-     *
-     * @since 0.2
-     * @author Stephan Kolesnikov
+     * @since 0.3
      */
-    fun showDownloading(
+    fun showCompleted(
         uiState: KsenaxMainUiState,
     ): KsenaxMainUiState {
         return uiState.copy(
-            modelDownloadOverlayState = KsenaxModelDownloadOverlayState.Downloading,
+            modelDownloadOverlayState =
+                KsenaxModelDownloadOverlayState.Completed,
             isCancelDownloadConfirmationVisible = false,
+            isModelDownloadOverlayMinimized = false,
         )
     }
 
@@ -124,6 +152,8 @@ object KsenaxInstallUiStateReducer {
         return uiState.copy(
             activeInstallOverlayTarget          = target,
             modelDownloadOverlayState           = KsenaxModelDownloadOverlayState.ModelOffer,
+            isModelDownloadOverlayMinimized      = false,
+            isActiveDownloadStalled              = false,
             isCancelDownloadConfirmationVisible = false,
         )
     }
@@ -176,6 +206,8 @@ object KsenaxInstallUiStateReducer {
         return uiState.copy(
             modelDownloadOverlayState           = KsenaxModelDownloadOverlayState.Hidden,
             activeInstallOverlayTarget          = null,
+            isModelDownloadOverlayMinimized      = false,
+            isActiveDownloadStalled              = false,
             allowDownloadOverMeteredNetwork     = false,
             allowDownloadOverRoaming            = false,
             isCancelDownloadConfirmationVisible = false,

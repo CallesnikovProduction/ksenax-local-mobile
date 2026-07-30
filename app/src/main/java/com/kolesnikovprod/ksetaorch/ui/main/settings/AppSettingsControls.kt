@@ -1,8 +1,7 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,22 +25,84 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelWideFrame
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.alternativeMainGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.aquaSunsetLightBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetLightBrush
+import com.kolesnikovprod.ksetaorch.ui.theme.design.themeSwitcherGradientBrush
+
+@Composable
+internal fun SettingsThemeSwitcherCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    KsenaxPressableBox(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth(),
+    ) { pressed ->
+        val pressedBrush = themeSwitcherGradientBrush.whileKsenaxPressed(pressed)
+
+        PixelWideFrame(
+            brush = pressedBrush,
+            backgroundColor = Color(0xE1080712),
+            modifier = Modifier.matchParentSize(),
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.settings_theme_chooser),
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                colorFilter = ColorFilter.tint(Color.White).takeIf { pressed },
+            )
+
+            Spacer(modifier = Modifier.width(13.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
+                GradientText(
+                    text = "THEME SWITCHER",
+                    fontSize = 21.sp,
+                    lineHeight = 22.sp,
+                    brush = pressedBrush,
+                    fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "Кастомизация темы из выбранных",
+                    color = Color(0xFFB8BBCF).whileKsenaxPressed(pressed),
+                    fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 internal fun SettingsSectionFrame(
+    theme: KsenaxThemeVisuals,
     iconRes: Int,
     iconSize: Dp,
     title: String,
@@ -55,7 +115,7 @@ internal fun SettingsSectionFrame(
         modifier = modifier.fillMaxWidth(),
     ) {
         PixelWideFrame(
-            brush = alternativeMainGradientBrush,
+            brush = theme.settingsBrush,
             backgroundColor = Color(0xD9050810),
             modifier = Modifier.matchParentSize(),
         )
@@ -80,7 +140,7 @@ internal fun SettingsSectionFrame(
                         GradientIcon(
                             drawableId = iconRes,
                             contentDescription = null,
-                            brush = sunsetBottomBarGradientBrush,
+                            brush = theme.controlsBrush,
                             modifier = Modifier
                                 .requiredSize(iconSize)
                                 .then(iconModifier),
@@ -93,8 +153,8 @@ internal fun SettingsSectionFrame(
                         text = title,
                         fontSize = 21.sp,
                         lineHeight = 22.sp,
-                        brush = alternativeMainGradientBrush,
-                        fontFamily = KsenaxFontFamily.jersey10,
+                        brush = theme.settingsBrush,
+                        fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
                         modifier = Modifier.layoutAwareOffsetX(titleOffsetX),
                     )
                 }
@@ -102,6 +162,7 @@ internal fun SettingsSectionFrame(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 PixelDottedLine(
+                    color = theme.mutedColor,
                     modifier = Modifier
                         .weight(1f)
                         .height(4.dp),
@@ -131,6 +192,7 @@ private fun Modifier.layoutAwareOffsetX(offset: Dp): Modifier {
 
 @Composable
 internal fun SettingsValueRow(
+    theme: KsenaxThemeVisuals,
     iconRes: Int,
     label: String,
     labelFontSize: TextUnit,
@@ -145,7 +207,7 @@ internal fun SettingsValueRow(
         GradientIcon(
             drawableId = iconRes,
             contentDescription = null,
-            brush = sunsetBottomBarGradientBrush,
+            brush = theme.controlsBrush,
             modifier = Modifier.size(39.dp),
         )
 
@@ -153,10 +215,10 @@ internal fun SettingsValueRow(
 
         GradientText(
             text = label,
-            fontFamily = KsenaxFontFamily.minecraftFont,
+            fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
             fontSize = labelFontSize,
             lineHeight = labelFontSize * 1.25f,
-            brush = sunsetLightBrush,
+            brush = theme.settingsBrush,
             modifier = Modifier.weight(1f),
         )
 
@@ -167,6 +229,7 @@ internal fun SettingsValueRow(
 
 @Composable
 internal fun SettingsPickerButton(
+    theme: KsenaxThemeVisuals,
     value: String,
     onChooseClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -175,11 +238,13 @@ internal fun SettingsPickerButton(
 
     Box(modifier = modifier.width(148.dp)) {
         PixelSelectorSurface(
+            theme = theme,
             value = value,
             onClick = { expanded = true },
         )
 
         SettingsDropdownMenu(
+            theme = theme,
             expanded = expanded,
             options = listOf("Выбрать"),
             selectedOption = null,
@@ -194,20 +259,138 @@ internal fun SettingsPickerButton(
 
 @Composable
 internal fun SettingsActionButton(
+    theme: KsenaxThemeVisuals,
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.width(148.dp)) {
-        PixelSelectorSurface(
-            value = text,
-            onClick = onClick,
+    KsenaxPressableBox(
+        onClick = onClick,
+        modifier = modifier
+            .width(128.dp)
+            .height(36.dp),
+        contentAlignment = Alignment.Center,
+    ) { pressed ->
+        FilledGradientPixelSurface(
+            theme = theme,
+            brush = theme.settingsBrush.whileKsenaxPressed(pressed),
+            modifier = Modifier.matchParentSize(),
         )
+
+        Text(
+            text = text,
+            color = Color.Black,
+            fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
+            fontSize = 14.sp,
+        )
+    }
+}
+
+/**
+ * Заполняет широкую ступенчатую кнопку градиентом активной темы.
+ *
+ * @since 0.3
+ */
+@Composable
+private fun FilledGradientPixelSurface(
+    theme: KsenaxThemeVisuals,
+    brush: androidx.compose.ui.graphics.Brush = theme.settingsBrush,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val pixel = 4.dp.toPx()
+
+        // Та же геометрия заполнения, что у PixelWideFrame.
+        drawRect(
+            brush = brush,
+            topLeft = Offset(pixel * 3f, pixel),
+            size = Size(
+                size.width - pixel * 6f,
+                size.height - pixel * 2f,
+            ),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(pixel, pixel * 3f),
+            size = Size(
+                size.width - pixel * 2f,
+                size.height - pixel * 6f,
+            ),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(pixel * 2f, pixel * 2f),
+            size = Size(pixel, pixel),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(size.width - pixel * 3f, pixel * 2f),
+            size = Size(pixel, pixel),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(pixel * 2f, size.height - pixel * 3f),
+            size = Size(pixel, pixel),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(
+                size.width - pixel * 3f,
+                size.height - pixel * 3f,
+            ),
+            size = Size(pixel, pixel),
+        )
+
+        // Контур повторяет PixelWideFrame, но сливается с градиентной заливкой.
+        drawRect(
+            brush = brush,
+            topLeft = Offset(pixel * 3f, 0f),
+            size = Size(size.width - pixel * 6f, pixel),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(pixel * 3f, size.height - pixel),
+            size = Size(size.width - pixel * 6f, pixel),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(0f, pixel * 3f),
+            size = Size(pixel, size.height - pixel * 6f),
+        )
+        drawRect(
+            brush = brush,
+            topLeft = Offset(size.width - pixel, pixel * 3f),
+            size = Size(pixel, size.height - pixel * 6f),
+        )
+
+        listOf(
+            Offset(pixel, pixel * 2f),
+            Offset(pixel * 2f, pixel),
+            Offset(pixel, size.height - pixel * 3f),
+            Offset(pixel * 2f, size.height - pixel * 2f),
+            Offset(size.width - pixel * 2f, pixel * 2f),
+            Offset(size.width - pixel * 3f, pixel),
+            Offset(
+                size.width - pixel * 2f,
+                size.height - pixel * 3f,
+            ),
+            Offset(
+                size.width - pixel * 3f,
+                size.height - pixel * 2f,
+            ),
+        ).forEach { cornerPixel ->
+            drawRect(
+                brush = brush,
+                topLeft = cornerPixel,
+                size = Size(pixel, pixel),
+            )
+        }
     }
 }
 
 @Composable
 internal fun ContextWindowPicker(
+    theme: KsenaxThemeVisuals,
     selected: KsenaxContextWindow,
     onSelected: (KsenaxContextWindow) -> Unit,
     modifier: Modifier = Modifier,
@@ -216,11 +399,13 @@ internal fun ContextWindowPicker(
 
     Box(modifier = modifier.width(148.dp)) {
         PixelSelectorSurface(
+            theme = theme,
             value = selected.label,
             onClick = { expanded = true },
         )
 
         SettingsDropdownMenu(
+            theme = theme,
             expanded = expanded,
             options = KsenaxContextWindow.entries.map(KsenaxContextWindow::label),
             selectedOption = selected.label,
@@ -237,22 +422,21 @@ internal fun ContextWindowPicker(
 
 @Composable
 private fun PixelSelectorSurface(
+    theme: KsenaxThemeVisuals,
     value: String,
     onClick: () -> Unit,
 ) {
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+            .height(42.dp),
         contentAlignment = Alignment.CenterStart,
-    ) {
+    ) { pressed ->
+        val pressedBrush = theme.settingsBrush.whileKsenaxPressed(pressed)
+
         PixelWideFrame(
-            brush = alternativeMainGradientBrush,
+            brush = pressedBrush,
             backgroundColor = Color(0xEC050811),
             modifier = Modifier.matchParentSize(),
         )
@@ -265,14 +449,15 @@ private fun PixelSelectorSurface(
         ) {
             Text(
                 text = value,
-                color = Color.White,
-                fontFamily = KsenaxFontFamily.minecraftFont,
+                color = Color.White.whileKsenaxPressed(pressed),
+                fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
                 fontSize = 10.sp,
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
 
             PixelDownArrow(
+                brush = theme.selectedBrush.whileKsenaxPressed(pressed),
                 modifier = Modifier.size(width = 14.dp, height = 10.dp),
             )
         }
@@ -281,6 +466,7 @@ private fun PixelSelectorSurface(
 
 @Composable
 private fun SettingsDropdownMenu(
+    theme: KsenaxThemeVisuals,
     expanded: Boolean,
     options: List<String>,
     selectedOption: String?,
@@ -297,27 +483,35 @@ private fun SettingsDropdownMenu(
         modifier = Modifier.width(148.dp),
     ) {
         options.forEach { option ->
-            DropdownMenuItem(
-                text = {
+            KsenaxPressableBox(
+                onClick = { onOptionSelected(option) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) { pressed ->
                     Text(
                         text = option,
-                        color = if (option == selectedOption) {
-                            Color(0xFF8EF7C9)
-                        } else {
-                            Color(0xFFD7DDEA)
-                        },
-                        fontFamily = KsenaxFontFamily.minecraftFont,
+                        color = (
+                            if (option == selectedOption) {
+                                theme.accentColor
+                            } else {
+                                Color(0xFFD7DDEA)
+                            }
+                        ).whileKsenaxPressed(pressed),
+                        fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
                         fontSize = 10.sp,
                     )
-                },
-                onClick = { onOptionSelected(option) },
-            )
+            }
         }
     }
 }
 
 @Composable
-internal fun SettingsSectionDivider() {
+internal fun SettingsSectionDivider(
+    color: Color,
+) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -328,7 +522,7 @@ internal fun SettingsSectionDivider() {
         var x = 0f
         while (x < size.width) {
             drawRect(
-                color = Color(0xFF24264B),
+                color = color.copy(alpha = 0.36f),
                 topLeft = Offset(x, 0f),
                 size = Size(dashWidth, size.height),
             )
@@ -339,6 +533,7 @@ internal fun SettingsSectionDivider() {
 
 @Composable
 private fun PixelDottedLine(
+    color: Color,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
@@ -346,7 +541,7 @@ private fun PixelDottedLine(
         var x = 0f
         while (x < size.width) {
             drawRect(
-                color = Color(0xFF29306A),
+                color = color.copy(alpha = 0.72f),
                 topLeft = Offset(x, (size.height - pixel) / 2f),
                 size = Size(pixel, pixel),
             )
@@ -357,6 +552,7 @@ private fun PixelDottedLine(
 
 @Composable
 private fun PixelDownArrow(
+    brush: androidx.compose.ui.graphics.Brush,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
@@ -372,7 +568,7 @@ private fun PixelDownArrow(
         )
         points.forEach { (x, y) ->
             drawRect(
-                brush = aquaSunsetLightBrush,
+                brush = brush,
                 topLeft = Offset(x * pixel, y * pixel),
                 size = Size(pixel, pixel),
             )

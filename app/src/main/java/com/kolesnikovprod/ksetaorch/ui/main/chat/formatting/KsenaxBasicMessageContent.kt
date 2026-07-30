@@ -3,9 +3,7 @@ package com.kolesnikovprod.ksetaorch.ui.main.chat.formatting
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,10 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.ui.components.PixelWideFrame
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
 import com.kolesnikovprod.ksetaorch.ui.theme.design.inactiveGradientBrush
 import kotlinx.coroutines.delay
@@ -92,7 +91,7 @@ private fun KsenaxBasicProseContent(
                             element.text.toBasicInlineAnnotatedString()
                         },
                         color = Color(0xFFF4F8FF),
-                        fontFamily = KsenaxFontFamily.epilepsySansForBasicFont,
+                        fontFamily = KsenaxFontFamily.EPILEPSY_SANS,
                         fontSize = 17.sp,
                         lineHeight = 20.sp,
                     )
@@ -104,7 +103,7 @@ private fun KsenaxBasicProseContent(
                             element.text.toBasicInlineAnnotatedString(forceBold = true)
                         },
                         color = Color(0xFFF4F8FF),
-                        fontFamily = KsenaxFontFamily.epilepsySansBoldForBasicFont,
+                        fontFamily = KsenaxFontFamily.EPILEPSY_SANS_BOLD,
                         fontSize = element.level.fontSize,
                         lineHeight = element.level.lineHeight,
                     )
@@ -158,34 +157,35 @@ private fun KsenaxCodeBlock(
                 Text(
                     text = languageLabel,
                     color = Color(0xFF8F98A8),
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 11.sp,
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                Text(
-                    text = if (copied) "COPIED" else "COPY",
-                    color = if (copied) CodeMethodColor else Color(0xFFB7C0F8),
-                    fontFamily = KsenaxFontFamily.tiny5,
-                    fontSize = 11.sp,
+                KsenaxPressableBox(
+                    onClick = {
+                        context.copyCodeBlock(code)
+                        copied = true
+                    },
                     modifier = Modifier
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {
-                                context.copyCodeBlock(code)
-                                copied = true
-                            },
-                        )
                         .padding(horizontal = 5.dp, vertical = 4.dp),
-                )
+                ) { pressed ->
+                    Text(
+                        text = if (copied) "COPIED" else "COPY",
+                        color = (
+                            if (copied) CodeMethodColor else Color(0xFFB7C0F8)
+                        ).whileKsenaxPressed(pressed),
+                        fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+                        fontSize = 11.sp,
+                    )
+                }
             }
 
             Text(
                 text = highlightedCode,
                 color = CodeDefaultColor,
-                fontFamily = KsenaxFontFamily.epilepsySansForBasicFont,
+                fontFamily = KsenaxFontFamily.EPILEPSY_SANS,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
                 softWrap = false,

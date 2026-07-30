@@ -5,8 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.main.background.common.TwinklingStarsLayer
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 
 /**
  * Главная функция по ЗАДНЕМУ ФОНУ со звёздочками + горы, дорога, закат.
@@ -19,11 +19,12 @@ import com.kolesnikovprod.ksetaorch.ui.main.background.common.TwinklingStarsLaye
  */
 @Composable
 fun KsenaxMainBackground(
+    theme: KsenaxThemeVisuals,
     showScenicOverlay: Boolean  = true,
     modifier:          Modifier = Modifier,
 ) {
     Image(
-        painter            = painterResource(R.drawable.main_bg_fundamental),
+        painter            = painterResource(theme.backgroundDrawableRes),
         contentDescription = null,
         contentScale       = ContentScale.Crop, // картинка заполнит полностью область
         modifier           = modifier,
@@ -31,12 +32,13 @@ fun KsenaxMainBackground(
 
     // Поверх картинки рисуется слой мерцающих звёзд
     TwinklingStarsLayer(
+        sparkleColors = theme.sparkleColors,
         modifier = modifier,
     )
 
     if (showScenicOverlay) {
         Image(
-            painter            = painterResource(R.drawable.main_bg_bottom_pic),
+            painter            = painterResource(theme.foregroundDrawableRes),
             contentDescription = null,
             contentScale       = ContentScale.Crop, // картинка заполнит полностью область
             modifier           = modifier,

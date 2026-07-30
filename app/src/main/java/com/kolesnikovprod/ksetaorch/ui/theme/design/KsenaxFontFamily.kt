@@ -5,10 +5,12 @@ import androidx.compose.ui.text.font.FontFamily
 import com.kolesnikovprod.ksetaorch.R
 
 object KsenaxFontFamily {
-    val jersey10 = FontFamily(Font(R.font.jersey10_regular))
-    val tiny5 = FontFamily(Font(R.font.tiny5_regular))
-    val pixelOperator8Bold = FontFamily(Font(R.font.pixel_operator8_bold))
-    val minecraftFont = FontFamily(Font(R.font.minecraft))
-    val epilepsySansForBasicFont = FontFamily(Font(R.font.epilepsy_sans))
-    val epilepsySansBoldForBasicFont = FontFamily(Font(R.font.epilepsy_sans_bold))
+    val LOGOS_AND_HEADLINES_JERSEY_10_REGULAR = FontFamily(Font(R.font.jersey10_regular))
+
+    val TITLES_COMIC_SANS_PIXEL = FontFamily(Font(R.font.comic_sans_ms_pixel))
+
+    val STANDALONE_DEPARTURE_MONO = FontFamily(Font(R.font.departure_mono))
+    val SETTINGS_MINECRAFT = FontFamily(Font(R.font.minecraft))
+    val EPILEPSY_SANS = FontFamily(Font(R.font.epilepsy_sans))
+    val EPILEPSY_SANS_BOLD = FontFamily(Font(R.font.epilepsy_sans_bold))
 }

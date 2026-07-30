@@ -7,7 +7,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -37,23 +41,27 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.AnimatedContent
+import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.hasRecordAudioPermission
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.rememberMicrophonePermissionLauncher
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.rememberWorkingFolderLauncher
 import com.kolesnikovprod.ksetaorch.ui.main.background.KsenaxMainBackground
 import com.kolesnikovprod.ksetaorch.ui.main.bottombar.GlowingBottomBar
+import com.kolesnikovprod.ksetaorch.ui.main.bottombar.common.BottomBarDefaultMeasuredHeight
+import com.kolesnikovprod.ksetaorch.ui.main.download.minimizedDownloadPresentation
 import com.kolesnikovprod.ksetaorch.ui.main.center.KsenaxCenterContent
 import com.kolesnikovprod.ksetaorch.ui.main.chat.KsenaxChatScreen
 import com.kolesnikovprod.ksetaorch.ui.main.launch.KsenaxLaunchAnimation
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
 import com.kolesnikovprod.ksetaorch.ui.main.model.toChatPanelTitle
-import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlay
+import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlayHost
 import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxProductInfoOverlay
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSettingsPage
 import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.KsenaxSidePanel
+import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.rememberKsenaxSidePanelRevealState
 import com.kolesnikovprod.ksetaorch.ui.main.topbar.PixelTopBar
+import com.kolesnikovprod.ksetaorch.ui.theme.visuals
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
-import kotlin.math.abs
 
 
 /**
@@ -109,6 +117,7 @@ fun KsenaxMainScreen(
      */
 
     val uiState = viewModel.uiState
+    val theme = uiState.settingsUiState.savedSnapshot.themeId.visuals
     val activeChat = uiState.activeChat
 
 
@@ -124,7 +133,6 @@ fun KsenaxMainScreen(
      * Нужен для доступа ко всему Android API.
      */
     val context = LocalContext.current
-
     /**
      * Возвращает объект, управляющий фокусом ввода.
      *
@@ -150,10 +158,9 @@ fun KsenaxMainScreen(
      *
      * Показывает, «с какого момента смещения пальца можно открывать боковую панель».
      */
-    val sidePanelSwipeThresholdPx = with(LocalDensity.current) {
-        84.dp.toPx()
+    val sidePanelWidthPx = with(LocalDensity.current) {
+        236.dp.toPx()
     }
-
 
     /*
      * ╦            ╔═════════════════════╗
@@ -165,12 +172,10 @@ fun KsenaxMainScreen(
         mutableStateOf(context.hasRecordAudioPermission())
     }
 
-    var isSidePanelOpen by remember {
-        mutableStateOf(false)
-    }
+    val sidePanelState = rememberKsenaxSidePanelRevealState()
 
     var bottomBarHeight by remember {
-        mutableStateOf(152.dp)
+        mutableStateOf(BottomBarDefaultMeasuredHeight)
     }
 
     var isLaunchAnimationVisible by rememberSaveable {
@@ -182,7 +187,6 @@ fun KsenaxMainScreen(
     var isProductInfoOverlayVisible by rememberSaveable {
         mutableStateOf(false)
     }
-
 
     /*
      * ╦            ╔══════════════════════════╗
@@ -220,7 +224,10 @@ fun KsenaxMainScreen(
      *
      * + проверка, мало ли пользователь отозвал разрешение на микрофон
      */
-    DisposableEffect(context, lifecycleOwner) {
+    DisposableEffect(
+        context,
+        lifecycleOwner,
+    ) {
         val observer = LifecycleEventObserver { _, event ->
             // нас интересует только момент возвращения пользователя на контекстный экран.
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -247,11 +254,18 @@ fun KsenaxMainScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            // моя функция-расширение с реакцией на свой
-            .openSidePanelOnRightSwipe(
-                enabled     = !isSidePanelOpen,
-                thresholdPx = sidePanelSwipeThresholdPx,
-                onOpen      = { isSidePanelOpen = true },
+            .dragSidePanelHorizontally(
+                enabled = !sidePanelState.isOpen,
+                isOpen = false,
+                onDragStarted = sidePanelState::onDragStarted,
+                onDragDelta = { dragDeltaX ->
+                    sidePanelState.onDragDelta(
+                        dragDeltaX = dragDeltaX,
+                        panelWidthPx = sidePanelWidthPx,
+                    )
+                },
+                onDragFinished = sidePanelState::onDragFinished,
+                onDragCancelled = sidePanelState::onDragCancelled,
             ),
     ) {
         /*
@@ -260,6 +274,7 @@ fun KsenaxMainScreen(
          * ╩            ╚═════════════════╝
          */
         KsenaxMainBackground(
+            theme = theme,
             showScenicOverlay = activeChat == null,
             modifier = Modifier.fillMaxSize(),
         )
@@ -283,6 +298,7 @@ fun KsenaxMainScreen(
             },
             bottomBar = {
                 GlowingBottomBar(
+                    theme             = theme,
                     value             = uiState.inputText,
                     onValueChange     = viewModel::onInputTextChanged,
                     hasMicPermission  = hasMicPermission,
@@ -314,6 +330,10 @@ fun KsenaxMainScreen(
                             }
                         }
                     },
+                    downloadPresentation =
+                        uiState.minimizedDownloadPresentation(),
+                    onDownloadClick =
+                        viewModel::onExpandDownloadOverlayClick,
                     onHeightChanged = { height -> bottomBarHeight = height },
                 )
             },
@@ -333,6 +353,7 @@ fun KsenaxMainScreen(
 
                 if (targetChat == null) {
                     KsenaxCenterContent(
+                        theme                  = theme,
                         isTypingStarted       = !isLaunchAnimationVisible,
                         isAgenticModeSelected = uiState.isAgenticModeSelected,
                         workingFolderPath     = uiState.workingFolderPath,
@@ -346,6 +367,7 @@ fun KsenaxMainScreen(
                     )
                 } else {
                     KsenaxChatScreen(
+                        theme = theme,
                         chat = targetChat,
                         bottomBarHeight = bottomBarHeight,
                     )
@@ -360,8 +382,11 @@ fun KsenaxMainScreen(
          */
 
         KsenaxSidePanel(
-            isOpen         = isSidePanelOpen,
-            onDismiss      = { isSidePanelOpen = false },
+            theme          = theme,
+            isOpen         = sidePanelState.isOpen ||
+                sidePanelState.revealProgress > 0f,
+            revealProgress = sidePanelState.revealProgress,
+            onDismiss      = sidePanelState::close,
             chats          = uiState.chats,
             activeChatId   = uiState.activeChatId,
             activeChatMode = activeChat?.mode,
@@ -371,19 +396,33 @@ fun KsenaxMainScreen(
                 } else {
                     onAgenticChatSelected(chat.id)
                 }
-                isSidePanelOpen = false
+                sidePanelState.snapClosed()
             },
             onRenameChat = viewModel::onRenameChat,
             onDeleteChat = viewModel::onDeleteChat,
             onNewChatClick = {
                 viewModel.onNewChatClick()
-                isSidePanelOpen = false
+                sidePanelState.snapClosed()
             },
             onSettingsClick = {
-                isSidePanelOpen = false
+                sidePanelState.snapClosed()
                 onSettingsRequested(KsenaxSettingsPage.Main)
             },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .dragSidePanelHorizontally(
+                    enabled = sidePanelState.isOpen,
+                    isOpen = true,
+                    onDragStarted = sidePanelState::onDragStarted,
+                    onDragDelta = { dragDeltaX ->
+                        sidePanelState.onDragDelta(
+                            dragDeltaX = dragDeltaX,
+                            panelWidthPx = sidePanelWidthPx,
+                        )
+                    },
+                    onDragFinished = sidePanelState::onDragFinished,
+                    onDragCancelled = sidePanelState::onDragCancelled,
+                ),
         )
 
         /*
@@ -393,7 +432,9 @@ fun KsenaxMainScreen(
          */
 
         PixelTopBar(
-            isSidePanelOpen = isSidePanelOpen,
+            theme           = theme,
+            isSidePanelOpen = sidePanelState.isOpen ||
+                sidePanelState.revealProgress > 0f,
             selectedMode    = uiState.selectedMode,
             activeChatMode  = activeChat?.mode,
             activeChatTitle = activeChat?.title?.toChatPanelTitle(),
@@ -401,7 +442,7 @@ fun KsenaxMainScreen(
                 viewModel.onModeSelected(mode)
             },
             onMenuClick     = {
-                isSidePanelOpen = !isSidePanelOpen
+                sidePanelState.toggle()
             },
         )
 
@@ -411,31 +452,14 @@ fun KsenaxMainScreen(
          * ╩            ╚═══════════════════════╝
          */
 
-        KsenaxDownloadOverlay(
-            state                       = uiState.modelDownloadOverlayState,
-            target                      = uiState.activeInstallOverlayTarget,
-            progress                    = uiState.activeInstallProgress,
-            allowOverMeteredNetwork     = uiState.allowDownloadOverMeteredNetwork,
-            allowOverRoaming            = uiState.allowDownloadOverRoaming,
-            isCancelConfirmationVisible = uiState.isCancelDownloadConfirmationVisible,
-            onAllowOverMeteredNetworkChange =
-                viewModel::onAllowDownloadOverMeteredNetworkChange,
-            onAllowOverRoamingChange =
-                viewModel::onAllowDownloadOverRoamingChange,
-            onInstallClick =
-                viewModel::onInstallModelClick,
-            onBackClick =
-                viewModel::onDismissModelOfferClick,
-            onCancelClick =
-                viewModel::onCancelDownloadClick,
-            onConfirmCancelClick =
-                viewModel::onConfirmCancelDownloadClick,
-            onKeepDownloadClick =
-                viewModel::onKeepDownloadClick,
+        KsenaxDownloadOverlayHost(
+            viewModel = viewModel,
+            theme = theme,
             modifier = Modifier.fillMaxSize(),
         )
 
         KsenaxProductInfoOverlay(
+            theme = theme,
             isVisible = isProductInfoOverlayVisible,
             onDismiss = {
                 isProductInfoOverlayVisible = false
@@ -460,61 +484,58 @@ fun KsenaxMainScreen(
         }
     }
 }
-
 /**
- * Добавляет жест открытия боковой панели свайпом вправо.
+ * Привязывает левую панель к горизонтальному движению пальца.
  *
- * Жест срабатывает только после прохождения [thresholdPx] и отклоняется, если
- * вертикальное движение слишком велико относительно горизонтального.
+ * Закрытая панель принимает только движение вправо. Открытая принимает оба
+ * направления, поэтому её можно также плавно вернуть за левую границу.
+ * Распознавание начинается после horizontal touch-slop и не конкурирует с
+ * вертикальным списком сообщений.
  *
- * @param enabled разрешено ли сейчас распознавать жест.
- * @param thresholdPx минимальное суммарное горизонтальное смещение.
- * @param onOpen действие после распознанного свайпа.
- *
- * @since 0.2
+ * @since 0.3
  */
-internal fun Modifier.openSidePanelOnRightSwipe(
-    enabled:     Boolean,
-    thresholdPx: Float,
-    onOpen:      () -> Unit,
+internal fun Modifier.dragSidePanelHorizontally(
+    enabled: Boolean,
+    isOpen: Boolean,
+    onDragStarted: () -> Unit,
+    onDragDelta: (Float) -> Unit,
+    onDragFinished: () -> Unit,
+    onDragCancelled: () -> Unit,
 ): Modifier {
-    if (!enabled) {
-        return this
-    }
+    if (!enabled) return this
 
-    // низкоуровневая обработка касаний
-    return pointerInput(thresholdPx, onOpen) {
-        // накопители движения пальца
-        var totalDragX = 0f  // сколько всего пользователь провёл по горизонтали
-        var totalDragY = 0f  // сколько всего пользователь провёл по вертикали
-
-        detectDragGestures(
-            // На начало движения пальцем -> обнуление
-            onDragStart = {
-                totalDragX = 0f
-                totalDragY = 0f
-            },
-            // Маленький кусочек свайпа прибавляется к общей сумме (смотря куда едет палец)
-            onDrag = { _, dragAmount ->
-                totalDragX += dragAmount.x
-                totalDragY += dragAmount.y
-            },
-            // Отпускаем палец -> решаем, норм свайп или случайное движение?
-            onDragEnd = {
-                val isRightSwipe = totalDragX > thresholdPx
-                val isMostlyHorizontal = abs(totalDragX) > abs(totalDragY) * 1.35f
-
-                // Должен пройти вправо больше порога
-                //               И
-                // Горизонтальное ГОРАЗДО ЗАМЕТНЕЕ вертикального с коэффициентом 35%
-                if (isRightSwipe && isMostlyHorizontal) {
-                    onOpen()
+    return pointerInput(enabled, isOpen) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var dragAccepted = false
+            val dragStart = awaitHorizontalTouchSlopOrCancellation(
+                pointerId = down.id,
+            ) { change, overSlop ->
+                if (isOpen || overSlop > 0f) {
+                    dragAccepted = true
+                    change.consume()
+                    onDragStarted()
+                    onDragDelta(overSlop)
                 }
-            },
-            onDragCancel = {
-                totalDragX = 0f
-                totalDragY = 0f
-            },
-        )
+            }
+
+            if (dragStart == null || !dragAccepted) {
+                return@awaitEachGesture
+            }
+
+            val completed = horizontalDrag(dragStart.id) { change ->
+                val dragAmount = change.positionChange().x
+                if (dragAmount != 0f) {
+                    change.consume()
+                    onDragDelta(dragAmount)
+                }
+            }
+
+            if (completed) {
+                onDragFinished()
+            } else {
+                onDragCancelled()
+            }
+        }
     }
 }

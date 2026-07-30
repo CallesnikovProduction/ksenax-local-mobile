@@ -121,7 +121,7 @@ internal fun String.toBasicInlineAnnotatedString(
                 withStyle(
                     SpanStyle(
                         color = InlineCodeTextColor,
-                        fontFamily = KsenaxFontFamily.epilepsySansBoldForBasicFont,
+                        fontFamily = KsenaxFontFamily.EPILEPSY_SANS_BOLD,
                     ),
                 ) {
                     append(chunk)
@@ -131,9 +131,9 @@ internal fun String.toBasicInlineAnnotatedString(
                 withStyle(
                     SpanStyle(
                         fontFamily = if (forceBold || isBold) {
-                            KsenaxFontFamily.epilepsySansBoldForBasicFont
+                            KsenaxFontFamily.EPILEPSY_SANS_BOLD
                         } else {
-                            KsenaxFontFamily.epilepsySansForBasicFont
+                            KsenaxFontFamily.EPILEPSY_SANS
                         },
                     ),
                 ) {

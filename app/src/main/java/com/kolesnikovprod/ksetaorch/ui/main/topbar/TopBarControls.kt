@@ -1,46 +1,42 @@
 package com.kolesnikovprod.ksetaorch.ui.main.topbar
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelSquareFrame
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 
 @Composable
 fun PixelMenuButton(
+    brush: Brush,
     rotation: Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .size(40.dp)
-            .graphicsLayer(rotationZ = rotation)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+            .graphicsLayer(rotationZ = rotation),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedBrush = brush.whileKsenaxPressed(pressed)
+
         PixelSquareFrame(
-            brush = sunsetBottomBarGradientBrush,
+            brush = pressedBrush,
             modifier = Modifier.matchParentSize(),
         )
 
         PixelMenuGlyph(
+            brush = pressedBrush,
             modifier = Modifier.size(width = 33.dp, height = 27.dp),
         )
     }
@@ -48,6 +44,7 @@ fun PixelMenuButton(
 
 @Composable
 private fun PixelMenuGlyph(
+    brush: Brush,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
@@ -59,7 +56,7 @@ private fun PixelMenuGlyph(
 
         repeat(3) { index ->
             drawRect(
-                brush = sunsetBottomBarGradientBrush,
+                brush = brush,
                 topLeft = Offset(startX, startY + (lineHeight + gap) * index),
                 size = Size(lineWidth, lineHeight),
             )

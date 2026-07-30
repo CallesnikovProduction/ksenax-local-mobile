@@ -8,7 +8,7 @@ import androidx.compose.material3.MaterialTheme
 
 import com.kolesnikovprod.ksetaorch.ui.KsenaxAppRoute
 
-const val CURRENT_APPLICATION_VERSION = 0.2f
+const val CURRENT_APPLICATION_VERSION = 0.3f
 
 /**
  * Стандартная Android-точка входа (entry-point Activity),

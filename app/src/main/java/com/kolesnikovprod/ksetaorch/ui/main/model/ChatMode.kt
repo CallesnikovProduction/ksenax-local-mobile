@@ -1,29 +1,21 @@
 package com.kolesnikovprod.ksetaorch.ui.main.model
 
-import androidx.compose.ui.graphics.Brush
 import com.kolesnikovprod.ksetaorch.R
-import com.kolesnikovprod.ksetaorch.ui.theme.design.agenticModeGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.basicModeGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.temporaricModeGradientBrush
 
 enum class ChatMode(
-    val label:          String,
-    val icon:           Int,
-    val activeGradient: Brush,
+    val label: String,
+    val icon: Int,
 ) {
     Basic(
         "basic",
-        R.drawable.ic_basic_llm_chat,
-        basicModeGradientBrush
+        R.drawable.tb_basic_mode,
     ),
     Agentic(
         "agentic",
-        R.drawable.ic_agentic_llm_chat,
-        agenticModeGradientBrush
+        R.drawable.tb_agentic_mode,
     ),
     Temporaric(
         "temporaric",
-        R.drawable.ic_temporaric_llm_chat,
-        temporaricModeGradientBrush
+        R.drawable.tb_temporaric_mode,
     )
 }

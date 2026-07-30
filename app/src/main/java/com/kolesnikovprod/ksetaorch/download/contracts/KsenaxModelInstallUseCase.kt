@@ -12,6 +12,9 @@ import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
  * реализаций. Контракт описывает одинаковый жизненный цикл:
  * старт загрузки, восстановление download id, отмена, очистка, подготовка
  * скачанного кандидата и финальная проверка установленного артефакта.
+ * UI-coordinator и process-independent background worker используют один
+ * контракт и одну общую финализацию; реализация не должна предполагать, что
+ * вызывающий ViewModel всё время остаётся жив.
  *
  * Для готовых `.litertlm` моделей Gemma и FunctionGemma подготовка подтверждает
  * наличие файла. Для zip-модели Vosk она распаковывает архив и приводит
@@ -38,6 +41,10 @@ interface KsenaxModelInstallUseCase {
      * 3. получается `downloadId`;
      * 4. сохраняется `downloadId`;
      * 5. возвращается `downloadId` наружу.
+     *
+     * Сам transfer выполняет системный DownloadManager. После его terminal
+     * broadcast фоновый install worker может продолжить подготовку и проверку
+     * через этот же use case без участия UI.
      *
      * @since 0.2
      */
@@ -129,7 +136,9 @@ interface KsenaxModelInstallUseCase {
      * Возвращает состояние активной задачи загрузки.
      *
      * Читается состояние из [android.app.DownloadManager], а реализующий
-     * класс получает доменный [KsenaxDownloadTaskSnapshot], а не сырые данные установщика.
+     * класс получает доменный [KsenaxDownloadTaskSnapshot], а не сырой Cursor.
+     * Снапшот уже содержит progress, реальные byte-счётчики, среднюю скорость
+     * и ETA, пригодные для передачи координатору.
      *
      * @since 0.2
      */

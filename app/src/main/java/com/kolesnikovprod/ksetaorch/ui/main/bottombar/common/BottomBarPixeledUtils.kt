@@ -1,29 +1,28 @@
 package com.kolesnikovprod.ksetaorch.ui.main.bottombar.common
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import kotlin.math.min
 
 /**
  * Composable-кнопка с кастомной пиксельной рамкой (скелет построения).
  *
  * @param modifier внешний модификатор кнопки
+ * @param buttonSize размер квадратной кнопки и её пиксельной рамки.
  * @param onClick действие при нажатии
- * @param frameBrush градиентная кисть рамки из `KsenaxGradientFamily.kt`.
+ * @param frameBrush градиентная кисть рамки из `OpenKsenaxGradientFamily.kt`.
  * @param content содержимое внутри кнопки
  *
  * @author Stephan Kolesnikov
@@ -31,26 +30,22 @@ import kotlin.math.min
  */
 @Composable
 fun ButtonAsPixeledFrame(
+    frameBrush: Brush,
     modifier:   Modifier   = Modifier,
+    buttonSize: Dp         = 41.dp,
     onClick:    () -> Unit = {},
-    frameBrush: Brush      = sunsetBottomBarGradientBrush,
-    content:    @Composable BoxScope.() -> Unit,
+    content:    @Composable BoxScope.(pressed: Boolean) -> Unit,
 ) {
-    // Кликабельность кнопки, но без зависимости от Material-анимации нажатия.
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
-            .size(41.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick,
-            ),
+            .size(buttonSize),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedBrush = frameBrush.whileKsenaxPressed(pressed)
+
         Canvas(
-            modifier = Modifier.size(41.dp),
+            modifier = Modifier.size(buttonSize),
         ) {
 
             /*
@@ -75,49 +70,49 @@ fun ButtonAsPixeledFrame(
             // Рисуется верхняя сторона рамки, которая начинается не сначала,
             // вежь она будет потом дорисовываться отдельным смещением пикселей
             drawRect(
-                brush = frameBrush,
+                brush = pressedBrush,
                 topLeft = Offset(stroke, 0f),
                 size = Size(size.width - stroke * 2, stroke),
             )
 
             // Нижняя
             drawRect(
-                brush = frameBrush,
+                brush = pressedBrush,
                 topLeft = Offset(stroke, size.height - stroke),
                 size = Size(size.width - stroke * 2, stroke),
             )
 
             // Левая рамка
             drawRect(
-                brush = frameBrush,
+                brush = pressedBrush,
                 topLeft = Offset(0f, stroke),
                 size = Size(stroke, size.height - stroke * 2),
             )
 
             // Правая рамка
             drawRect(
-                brush = frameBrush,
+                brush = pressedBrush,
                 topLeft = Offset(size.width - stroke, stroke),
                 size = Size(stroke, size.height - stroke * 2),
             )
 
             /* Пиксели по бокам, создающие ощущение пиксель-арта */
-            drawRect(frameBrush,
+            drawRect(pressedBrush,
                 Offset(stroke, stroke), Size(stroke, stroke)
             )
-            drawRect(frameBrush,
+            drawRect(pressedBrush,
                 Offset(size.width - stroke * 2, stroke), Size(stroke, stroke)
             )
-            drawRect(frameBrush,
+            drawRect(pressedBrush,
                 Offset(stroke, size.height - stroke * 2), Size(stroke, stroke)
             )
-            drawRect(frameBrush,
+            drawRect(pressedBrush,
                 Offset(size.width - stroke * 2, size.height - stroke * 2), Size(stroke, stroke)
             )
         }
 
         // вызывается само содержимое ВНУТРИ кнопки
-        content()
+        content(pressed)
     }
 }
 

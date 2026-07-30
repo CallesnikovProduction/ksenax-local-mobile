@@ -1,10 +1,14 @@
 package com.kolesnikovprod.ksetaorch.download
 
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
+import com.kolesnikovprod.ksetaorch.download.domain.InstallCandidateFinalizer
+import com.kolesnikovprod.ksetaorch.download.domain.InstallFinalizationEvent
+import com.kolesnikovprod.ksetaorch.download.domain.InstallFinalizationOutcome
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallCheckState
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadPolicy
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadState
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTransferMetrics
 import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
@@ -20,13 +24,17 @@ import kotlin.time.Duration.Companion.milliseconds
  * 2) надо ли валидировать локальный артефакт?
  * 3) идёт ли загрузка?
  * 4) сколько процентов скачано?
- * 5) загрузка прервалась?
- * 6) пользователь отменил?
- * 7) модель валидна?
- * 8) надо ли удалить битый артефакт?
+ * 5) сколько байтов уже загружено и каков полный размер?
+ * 6) какова сглаженная скорость и расчётное оставшееся время?
+ * 7) загрузка прервалась?
+ * 8) пользователь отменил?
+ * 9) модель валидна?
+ * 10) надо ли удалить битый артефакт?
  *
  * Иными словами, класс является конечным автоматом, который обеспечивает правильную работу
- * со сценариями установки.
+ * со сценариями установки, пока UI-процесс активен. Долговечность самой
+ * передачи и post-download финализации принадлежит Android DownloadManager и
+ * background install worker, а не lifecycle этого coordinator-а.
  *
  * @since 0.2
  * @author Stephan Kolesnikov
@@ -34,6 +42,9 @@ import kotlin.time.Duration.Companion.milliseconds
 class KsenaxModelInstallCoordinator(
     private val installUseCase: KsenaxModelInstallUseCase,
 ) {
+
+    private val installCandidateFinalizer =
+        InstallCandidateFinalizer(installUseCase)
 
     /**
      * Функция создания первого снапшота для экрана.
@@ -67,6 +78,9 @@ class KsenaxModelInstallCoordinator(
         return currentSnapshot.copy(
             currentDownloadId     = downloadId,  // Полученный Id теперь пихаем
             downloadProgress      = 0f,          // Стартуем -> с нуля
+            downloadState         = KsenaxDownloadState.PENDING,
+            downloadWaitReason    = null,
+            transferMetrics       = KsenaxDownloadTransferMetrics(),
             isDownloading         = true,
             isInterrupted = false,
             isCancelled   = false,
@@ -90,6 +104,10 @@ class KsenaxModelInstallCoordinator(
 
         return currentSnapshot.copy(
             currentDownloadId     = NO_DOWNLOAD_ID,
+            downloadProgress      = 0f,
+            downloadState         = KsenaxDownloadState.UNKNOWN,
+            downloadWaitReason    = null,
+            transferMetrics       = KsenaxDownloadTransferMetrics(),
             isDownloading         = false,
             isInterrupted = false,
             isCancelled   = true,
@@ -180,32 +198,21 @@ class KsenaxModelInstallCoordinator(
             copy(hasCandidate = KsenaxInstallCheckState.SUCCESS)
         }
 
-        emit {
-            copy(
-                preparationState = KsenaxInstallCheckState.LOADING,
-                isValidating = false,
-            )
-        }
-
-        val isInstallPrepared = installUseCase.prepareInstallCandidate()
+        val finalizationOutcome = finalizeInstallCandidate(
+            expectedDownloadId = null,
+            emit = emit,
+        )
+        val isValidInstallation =
+            finalizationOutcome == InstallFinalizationOutcome.INSTALLED
 
         emit {
             copy(
                 preparationState =
-                    if (isInstallPrepared) {
+                    if (isValidInstallation) {
                         KsenaxInstallCheckState.SUCCESS
                     } else {
                         KsenaxInstallCheckState.FAILURE
                     },
-                isValidating = isInstallPrepared,
-            )
-        }
-
-        val isValidInstallation =
-            isInstallPrepared && installUseCase.hasValidInstallation()
-
-        emit {
-            copy(
                 hasCandidate =
                     if (isValidInstallation) {
                         KsenaxInstallCheckState.SUCCESS
@@ -229,14 +236,6 @@ class KsenaxModelInstallCoordinator(
                 isInterrupted = !isValidInstallation,
                 isValidating     = false,
             )
-        }
-
-        if (!isValidInstallation) {
-            installUseCase.deleteLocalArtifacts()
-
-            emit {
-                copy(hasCandidate = KsenaxInstallCheckState.FAILURE)
-            }
         }
     }
 
@@ -264,7 +263,10 @@ class KsenaxModelInstallCoordinator(
                         currentDownloadId     = NO_DOWNLOAD_ID,
                         isDownloading         = false,
                         isInterrupted = true,
-                        downloadProgress      = 0f
+                        downloadProgress      = 0f,
+                        downloadState         = KsenaxDownloadState.UNKNOWN,
+                        downloadWaitReason    = null,
+                        transferMetrics       = KsenaxDownloadTransferMetrics(),
                     )
                 }
                 installUseCase.clearArtifacts()
@@ -272,7 +274,12 @@ class KsenaxModelInstallCoordinator(
             }
 
             emit {
-                copy(downloadProgress = status.progress)
+                copy(
+                    downloadProgress = status.progress,
+                    downloadState = status.state,
+                    downloadWaitReason = status.waitReason,
+                    transferMetrics = status.transferMetrics,
+                )
             }
 
             when (status.state) {
@@ -282,39 +289,59 @@ class KsenaxModelInstallCoordinator(
                         copy(
                             downloadProgress = 1f,
                             isDownloading = false,
-                            preparationState = KsenaxInstallCheckState.LOADING,
+                            downloadState = KsenaxDownloadState.SUCCESSFUL,
+                            downloadWaitReason = null,
                             isValidating = false,
                         )
                     }
 
-                    val isInstallPrepared = installUseCase.prepareInstallCandidate()
+                    val finalizationOutcome = finalizeInstallCandidate(
+                        expectedDownloadId = activeDownloadId,
+                        emit = emit,
+                    )
+                    val isValidInstallation =
+                        finalizationOutcome == InstallFinalizationOutcome.INSTALLED
+                    val isSuperseded =
+                        finalizationOutcome == InstallFinalizationOutcome.SUPERSEDED
+                    val savedDownloadId =
+                        if (isSuperseded) {
+                            installUseCase.getSavedDownloadId()
+                        } else {
+                            NO_DOWNLOAD_ID
+                        }
 
                     emit {
                         copy(
+                            currentDownloadId     = savedDownloadId,
+                            downloadProgress      = if (isValidInstallation) 1f else 0f,
+                            transferMetrics =
+                                if (isValidInstallation) {
+                                    status.transferMetrics
+                                } else {
+                                    KsenaxDownloadTransferMetrics()
+                                },
+                            isDownloading         =
+                                isSuperseded && savedDownloadId != NO_DOWNLOAD_ID,
+                            downloadState         =
+                                when {
+                                    isValidInstallation ->
+                                        KsenaxDownloadState.SUCCESSFUL
+                                    isSuperseded ->
+                                        KsenaxDownloadState.UNKNOWN
+                                    else ->
+                                        KsenaxDownloadState.FAILED
+                                },
+                            downloadWaitReason    = null,
                             preparationState =
-                                if (isInstallPrepared) {
+                                if (isValidInstallation) {
                                     KsenaxInstallCheckState.SUCCESS
                                 } else {
                                     KsenaxInstallCheckState.FAILURE
                                 },
-                            isValidating = isInstallPrepared,
-                        )
-                    }
-
-                    val isValidInstallation = try {
-                        isInstallPrepared && installUseCase.hasValidInstallation()
-                    } finally {
-                        emit {
-                            copy(isValidating = false)
-                        }
-                    }
-
-                    emit {
-                        copy(
-                            currentDownloadId     = NO_DOWNLOAD_ID,
-                            downloadProgress      = if (isValidInstallation) 1f else 0f,
-                            isDownloading         = false,
-                            isInterrupted = !isValidInstallation,
+                            isInterrupted =
+                                finalizationOutcome == InstallFinalizationOutcome.INVALID,
+                            isCancelled =
+                                isSuperseded && savedDownloadId == NO_DOWNLOAD_ID,
                             isInstalled      = isValidInstallation,
                             hasCandidate =
                                 if (isValidInstallation)
@@ -327,12 +354,6 @@ class KsenaxModelInstallCoordinator(
                         )
                     }
 
-                    installUseCase.clearSavedDownloadId()
-
-                    if (!isValidInstallation) {
-                        installUseCase.deleteLocalArtifacts()
-                    }
-
                     break
                 }
 
@@ -341,9 +362,12 @@ class KsenaxModelInstallCoordinator(
                         copy(
                             currentDownloadId     = NO_DOWNLOAD_ID,
                             isDownloading         = false,
+                            downloadState         = KsenaxDownloadState.FAILED,
+                            downloadWaitReason    = null,
                             isInterrupted = true,
                             preparationState = KsenaxInstallCheckState.NON_CONFIRMED,
                             downloadProgress      = 0f,
+                            transferMetrics       = KsenaxDownloadTransferMetrics(),
                             hasCandidate     = KsenaxInstallCheckState.FAILURE,
                             isValidInstallation   = KsenaxInstallCheckState.FAILURE
                         )
@@ -360,6 +384,70 @@ class KsenaxModelInstallCoordinator(
 
             delay(DOWNLOAD_POLL_DELAY_MILLIS.milliseconds)
         }
+    }
+
+    /**
+     * Маппит внутренние события общей финализации в UI-снапшот.
+     *
+     * Сам prepare/validate-алгоритм находится в [InstallCandidateFinalizer] и
+     * одинаков для активного UI и фонового WorkManager.
+     */
+    private suspend fun finalizeInstallCandidate(
+        expectedDownloadId: Long?,
+        emit: (KsenaxInstallSnapshot.() -> KsenaxInstallSnapshot) -> Unit,
+    ): InstallFinalizationOutcome {
+        return installCandidateFinalizer.finalize(
+            expectedDownloadId = expectedDownloadId,
+            onEvent = { event ->
+                when (event) {
+                    InstallFinalizationEvent.PreparationStarted -> {
+                        emit {
+                            copy(
+                                preparationState = KsenaxInstallCheckState.LOADING,
+                                isValidating = false,
+                            )
+                        }
+                    }
+
+                    is InstallFinalizationEvent.PreparationFinished -> {
+                        emit {
+                            copy(
+                                preparationState =
+                                    if (event.isSuccessful) {
+                                        KsenaxInstallCheckState.SUCCESS
+                                    } else {
+                                        KsenaxInstallCheckState.FAILURE
+                                    },
+                                isValidating = event.isSuccessful,
+                            )
+                        }
+                    }
+
+                    InstallFinalizationEvent.ValidationStarted -> {
+                        emit {
+                            copy(
+                                isValidating = true,
+                                isValidInstallation = KsenaxInstallCheckState.LOADING,
+                            )
+                        }
+                    }
+
+                    is InstallFinalizationEvent.ValidationFinished -> {
+                        emit {
+                            copy(
+                                isValidating = false,
+                                isValidInstallation =
+                                    if (event.isSuccessful) {
+                                        KsenaxInstallCheckState.SUCCESS
+                                    } else {
+                                        KsenaxInstallCheckState.FAILURE
+                                    },
+                            )
+                        }
+                    }
+                }
+            },
+        )
     }
 
     private companion object {

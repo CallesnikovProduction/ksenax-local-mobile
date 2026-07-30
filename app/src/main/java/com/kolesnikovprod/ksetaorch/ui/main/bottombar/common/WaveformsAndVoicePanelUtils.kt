@@ -22,7 +22,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
-import com.kolesnikovprod.ksetaorch.ui.theme.design.aquaSunsetVoiceBottomBarGradientBrush
 import kotlin.math.roundToInt
 
 
@@ -34,6 +33,7 @@ import kotlin.math.roundToInt
  */
 @Composable
 internal fun VoiceActivityPanel(
+    frameBrush:       Brush,
     isRecordingVoice:  Boolean,
     isProcessingVoice: Boolean,
     voiceLevel:        Float,
@@ -59,17 +59,19 @@ internal fun VoiceActivityPanel(
     ) {
         BottomBarFrame(
             modifier = Modifier.matchParentSize(),
-            frameBrush = aquaSunsetVoiceBottomBarGradientBrush,
+            frameBrush = frameBrush,
         )
 
         when {
             isProcessingVoice -> PixelVoiceProcessingLine(
+                frameBrush = frameBrush,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(22.dp)
                     .padding(horizontal = 17.dp),
             )
             isRecordingVoice -> PixelVoiceWaveform(
+                frameBrush = frameBrush,
                 voiceSamples = voiceSamples,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -88,7 +90,7 @@ internal fun VoiceActivityPanel(
  */
 @Composable
 private fun PixelVoiceWaveform(
-    frameBrush:   Brush    = aquaSunsetVoiceBottomBarGradientBrush,
+    frameBrush:   Brush,
     voiceSamples: List<Float>,
     modifier:     Modifier = Modifier,
 ) {
@@ -128,8 +130,8 @@ private fun PixelVoiceWaveform(
 
 @Composable
 private fun PixelVoiceProcessingLine(
+    frameBrush: Brush,
     modifier:   Modifier = Modifier,
-    frameBrush: Brush    = aquaSunsetVoiceBottomBarGradientBrush
 ) {
     val transition = rememberInfiniteTransition(label = "voice_processing")
     val phase by transition.animateFloat(

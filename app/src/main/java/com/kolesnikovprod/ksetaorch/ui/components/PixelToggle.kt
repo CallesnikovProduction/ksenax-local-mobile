@@ -49,11 +49,15 @@ private val PixelToggleDisabledBrush = Brush.linearGradient(
     ),
 )
 
-internal fun pixelToggleStateBrush(isEnabled: Boolean): Brush {
+internal fun pixelToggleStateBrush(
+    isEnabled: Boolean,
+    enabledBrush: Brush = PixelToggleEnabledBrush,
+    disabledBrush: Brush = PixelToggleDisabledBrush,
+): Brush {
     return if (isEnabled) {
-        PixelToggleEnabledBrush
+        enabledBrush
     } else {
-        PixelToggleDisabledBrush
+        disabledBrush
     }
 }
 
@@ -75,9 +79,15 @@ internal fun pixelToggleStateBrush(isEnabled: Boolean): Brush {
 fun PixelToggleIcon(
     isEnabled: Boolean,
     contentDescription: String,
+    enabledBrush: Brush = PixelToggleEnabledBrush,
+    disabledBrush: Brush = PixelToggleDisabledBrush,
     modifier: Modifier = Modifier,
 ) {
-    val brush = pixelToggleStateBrush(isEnabled)
+    val brush = pixelToggleStateBrush(
+        isEnabled = isEnabled,
+        enabledBrush = enabledBrush,
+        disabledBrush = disabledBrush,
+    )
     val knobSize = 30.dp
     val knobOffset = 3.dp
 

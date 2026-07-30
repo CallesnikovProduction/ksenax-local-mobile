@@ -1,10 +1,7 @@
 package com.kolesnikovprod.ksetaorch.ui.main.settings
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +28,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
@@ -39,16 +35,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelSquareFrame
+import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
+import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.inactiveGradientBrush
-import com.kolesnikovprod.ksetaorch.ui.theme.design.mainGradient
-import com.kolesnikovprod.ksetaorch.ui.theme.design.sunsetBottomBarGradientBrush
 
 private val ExperimentalPink = Color(0xFFE58AB8)
 
 @Composable
 fun TranscribingSettingsScreen(
+    theme: KsenaxThemeVisuals,
     onBackClick: () -> Unit,
     selectedModel: KsenaxTranscribingModel?,
     isGemmaInstalled: Boolean,
@@ -68,12 +65,14 @@ fun TranscribingSettingsScreen(
                 .padding(horizontal = 18.dp),
         ) {
             TranscribingSettingsTopBar(
+                theme = theme,
                 onBackClick = onBackClick,
             )
 
             Spacer(modifier = Modifier.height(14.dp))
 
             TranscribingOptionButton(
+                theme = theme,
                 model = KsenaxTranscribingModel.Gemma,
                 isSelected = selectedModel == KsenaxTranscribingModel.Gemma,
                 isInstalled = isGemmaInstalled,
@@ -83,6 +82,7 @@ fun TranscribingSettingsScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             TranscribingOptionButton(
+                theme = theme,
                 model = KsenaxTranscribingModel.Vosk,
                 isSelected = selectedModel == KsenaxTranscribingModel.Vosk,
                 isInstalled = isVoskInstalled,
@@ -94,6 +94,7 @@ fun TranscribingSettingsScreen(
 
 @Composable
 private fun TranscribingSettingsTopBar(
+    theme: KsenaxThemeVisuals,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -103,6 +104,7 @@ private fun TranscribingSettingsTopBar(
             .height(66.dp),
     ) {
         PixelBackButton(
+            brush = theme.controlsBrush,
             onClick = onBackClick,
             modifier = Modifier.align(Alignment.CenterStart),
         )
@@ -111,15 +113,15 @@ private fun TranscribingSettingsTopBar(
             text = "Choose Voice-model",
             fontSize = 14.sp,
             lineHeight = 10.sp,
-            brush = sunsetBottomBarGradientBrush,
+            brush = theme.settingsBrush,
             textAlign = TextAlign.Center,
             modifier = Modifier.align(Alignment.Center),
         )
 
         GradientIcon(
-            drawableId = R.drawable.soft_ic_transcribesettings,
+            drawableId = R.drawable.settings_ic_chaptered,
             contentDescription = null,
-            brush = sunsetBottomBarGradientBrush,
+            brush = theme.controlsBrush,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .size(54.dp)
@@ -130,27 +132,25 @@ private fun TranscribingSettingsTopBar(
 
 @Composable
 internal fun PixelBackButton(
+    brush: Brush,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
-            .size(40.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+            .size(40.dp),
         contentAlignment = Alignment.Center,
-    ) {
+    ) { pressed ->
+        val pressedBrush = brush.whileKsenaxPressed(pressed)
+
         PixelSquareFrame(
-            brush = sunsetBottomBarGradientBrush,
+            brush = pressedBrush,
             modifier = Modifier.matchParentSize(),
         )
 
         PixelBackGlyph(
+            brush = pressedBrush,
             modifier = Modifier.size(width = 19.dp, height = 23.dp),
         )
     }
@@ -158,6 +158,7 @@ internal fun PixelBackButton(
 
 @Composable
 private fun PixelBackGlyph(
+    brush: Brush,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
@@ -180,7 +181,7 @@ private fun PixelBackGlyph(
 
         arrowPixels.forEach { (x, y) ->
             drawRect(
-                brush = sunsetBottomBarGradientBrush,
+                brush = brush,
                 topLeft = Offset(
                     x = leftX + x * pixel,
                     y = centerY + (y - 2) * pixel,
@@ -193,28 +194,30 @@ private fun PixelBackGlyph(
 
 @Composable
 private fun TranscribingOptionButton(
+    theme: KsenaxThemeVisuals,
     model: KsenaxTranscribingModel,
     isSelected: Boolean,
     isInstalled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val optionBrush = if (isSelected && isInstalled) mainGradient else inactiveGradientBrush
+    val optionBrush = if (isSelected && isInstalled) {
+        theme.selectedBrush
+    } else {
+        theme.inactiveBrush
+    }
 
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(112.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-    ) {
+            .height(112.dp),
+    ) { pressed ->
+        val pressedBrush = optionBrush.whileKsenaxPressed(pressed)
+
         PixelTransparentButtonFrame(
             modifier = Modifier.matchParentSize(),
-            brush = optionBrush,
+            brush = pressedBrush,
         )
 
         Row(
@@ -229,15 +232,15 @@ private fun TranscribingOptionButton(
             ) {
                 TranscribingModelTitle(
                     model = model,
-                    brush = optionBrush,
+                    brush = pressedBrush,
                 )
 
                 Spacer(modifier = Modifier.height(7.dp))
 
                 Text(
                     text = model.description,
-                    color = Color(0xFF6F7C8A),
-                    fontFamily = KsenaxFontFamily.tiny5,
+                    color = theme.mutedColor.whileKsenaxPressed(pressed),
+                    fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                     fontSize = 12.sp,
                     lineHeight = 14.sp,
                 )
@@ -246,6 +249,7 @@ private fun TranscribingOptionButton(
             if (!isInstalled) {
                 Spacer(modifier = Modifier.width(14.dp))
                 PixelDownloadButton(
+                    brush = theme.controlsBrush,
                     onClick = onClick,
                 )
             }
@@ -268,7 +272,7 @@ private fun TranscribingModelTitle(
             fontSize = 14.sp,
             lineHeight = 15.sp,
             brush = brush,
-            fontFamily = KsenaxFontFamily.tiny5,
+            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
             textAlign = TextAlign.Start,
         )
 
@@ -278,7 +282,7 @@ private fun TranscribingModelTitle(
             Text(
                 text = model.experimentalLabel,
                 color = ExperimentalPink,
-                fontFamily = KsenaxFontFamily.tiny5,
+                fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
                 fontSize = 14.sp,
                 lineHeight = 15.sp,
             )
@@ -288,24 +292,20 @@ private fun TranscribingModelTitle(
 
 @Composable
 internal fun PixelDownloadButton(
+    brush: Brush,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Box(
+    KsenaxPressableBox(
+        onClick = onClick,
         modifier = modifier
-            .size(42.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+            .size(42.dp),
         contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            painter = painterResource(id = R.drawable.soft_ic_download),
+    ) { pressed ->
+        GradientIcon(
+            drawableId = R.drawable.settings_ic_download,
             contentDescription = "Download model",
+            brush = brush.whileKsenaxPressed(pressed),
             modifier = Modifier.size(30.dp),
         )
     }
@@ -354,7 +354,7 @@ internal fun GradientText(
     lineHeight: TextUnit,
     brush: Brush,
     modifier: Modifier = Modifier,
-    fontFamily: FontFamily = KsenaxFontFamily.minecraftFont,
+    fontFamily: FontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
     textAlign: TextAlign = TextAlign.Start,
 ) {
     Text(

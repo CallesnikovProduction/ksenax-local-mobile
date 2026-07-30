@@ -1,6 +1,9 @@
 package com.kolesnikovprod.ksetaorch
 
 import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.kolesnikovprod.ksetaorch.clean.KsenaxRuntimeCacheCleanupManager
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxLiteRtAudioBackend
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelRuntimeConfig
@@ -15,9 +18,10 @@ import com.kolesnikovprod.ksetaorch.storage.chat.data.local.KsenaxChatDatabase
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.KsenaxChatRepository
 import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxAgentRuntimeController
 import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxAgenticWorkController
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxCompositeModelIntegrityVerifier
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaIntegrityController
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxModelIntegrityVerifier
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxCompositeModelIntegrityVerifier
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaIntegrityController
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelIntegrityVerifier
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelVerificationSessionRegistry
 
 /**
  * Process-level application object.
@@ -32,6 +36,25 @@ import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxModelIntegrityVerifier
 class KsenaxAndroidApplication : Application() {
 
     /**
+     * Foreground-session кэш успешной проверки локальных моделей.
+     *
+     * @since 0.3
+     */
+    val modelVerificationSessionRegistry =
+        KsenaxModelVerificationSessionRegistry()
+
+    private val modelVerificationLifecycleObserver =
+        object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                modelVerificationSessionRegistry.onAppForegrounded()
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                modelVerificationSessionRegistry.onAppBackgrounded()
+            }
+        }
+
+    /**
      * Занимается очисткой runtime-cache, crash/session markers и подобным мусором.
      * @since 0.2
      */
@@ -44,6 +67,9 @@ class KsenaxAndroidApplication : Application() {
 
         runtimeCacheCleanupManager.prepareProcessSession()
         runtimeCacheCleanupManager.installUncaughtExceptionCleanupHook()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            modelVerificationLifecycleObserver,
+        )
     }
 
     /**
@@ -76,7 +102,10 @@ class KsenaxAndroidApplication : Application() {
     }
 
     val gemmaIntegrityController: KsenaxGemmaIntegrityController by lazy {
-        KsenaxGemmaIntegrityController(gemmaInstallUseCase)
+        KsenaxGemmaIntegrityController(
+            installUseCase = gemmaInstallUseCase,
+            sessionRegistry = modelVerificationSessionRegistry,
+        )
     }
 
     val functionGemmaInstallUseCase: KsenaxFunctionGemmaInstallUseCase by lazy {
@@ -84,7 +113,10 @@ class KsenaxAndroidApplication : Application() {
     }
 
     val functionGemmaIntegrityController: KsenaxGemmaIntegrityController by lazy {
-        KsenaxGemmaIntegrityController(functionGemmaInstallUseCase)
+        KsenaxGemmaIntegrityController(
+            installUseCase = functionGemmaInstallUseCase,
+            sessionRegistry = modelVerificationSessionRegistry,
+        )
     }
 
     val agenticModelsIntegrityController: KsenaxModelIntegrityVerifier by lazy {
@@ -145,4 +177,5 @@ class KsenaxAndroidApplication : Application() {
     val functionGemmaTemporaricChatCoordinator: KsenaxTemporaricChatCoordinator by lazy {
         KsenaxTemporaricChatCoordinator(functionGemmaModelSession)
     }
+
 }

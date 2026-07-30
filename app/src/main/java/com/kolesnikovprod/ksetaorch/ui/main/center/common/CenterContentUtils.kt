@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
@@ -31,7 +32,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
-import com.kolesnikovprod.ksetaorch.ui.theme.design.mainGradient
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -46,6 +46,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * @since 0.2
  */
 @Composable internal fun TypingAndroidPathLabel(
+    textColor: Color,
     path:      String,
     isVisible: Boolean,
     modifier:  Modifier = Modifier,
@@ -76,8 +77,8 @@ import kotlin.time.Duration.Companion.milliseconds
     ) {
         Text(
             text       = visiblePath,
-            color      = Color(0xFF747C89),
-            fontFamily = KsenaxFontFamily.tiny5,
+            color      = textColor,
+            fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
             fontSize   = 10.sp,
             lineHeight = 12.sp,
             maxLines   = 1,
@@ -100,13 +101,14 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 @Composable internal fun GradientHeroText(
     text: String,
+    brush: Brush,
     modifier: Modifier = Modifier,
 ) {
     Text(
         text           = text,
         color          = Color.White,
         style          = TextStyle(
-            fontFamily = KsenaxFontFamily.jersey10,
+            fontFamily = KsenaxFontFamily.LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
             fontSize   = 104.sp,
             lineHeight = 92.sp,
             textAlign  = TextAlign.Center,
@@ -117,7 +119,7 @@ import kotlin.time.Duration.Companion.milliseconds
                 onDrawWithContent {
                     drawContent()
                     drawRect(
-                        brush     = mainGradient,
+                        brush     = brush,
                         blendMode = BlendMode.SrcAtop,
                     )
                 }
@@ -139,7 +141,10 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * @since 0.2
  */
-@Composable internal fun PixelHeroDivider(modifier: Modifier = Modifier) {
+@Composable internal fun PixelHeroDivider(
+    brush: Brush,
+    modifier: Modifier = Modifier,
+) {
     Canvas(modifier = modifier) {
         val pixel        = 3.dp.toPx()
         val centerX      = size.width / 2f
@@ -153,12 +158,12 @@ import kotlin.time.Duration.Companion.milliseconds
         val dotCount     = 3
 
         drawRect(
-            brush   = mainGradient,
+            brush   = brush,
             topLeft = Offset(centerX - diamondGap - segmentWidth, lineY),
             size    = Size(segmentWidth, lineHeight),
         )
         drawRect(
-            brush   = mainGradient,
+            brush   = brush,
             topLeft = Offset(centerX + diamondGap, lineY),
             size    = Size(segmentWidth, lineHeight),
         )
@@ -167,12 +172,12 @@ import kotlin.time.Duration.Companion.milliseconds
             val offset = (index + 1) * (dotSize + dotGap)
 
             drawRect(
-                brush   = mainGradient,
+                brush   = brush,
                 topLeft = Offset(centerX - diamondGap - segmentWidth - offset, lineY),
                 size    = Size(dotSize, dotSize),
             )
             drawRect(
-                brush   = mainGradient,
+                brush   = brush,
                 topLeft = Offset(centerX + diamondGap + segmentWidth + dotGap + index * (dotSize + dotGap), lineY),
                 size    = Size(dotSize, dotSize),
             )
@@ -201,7 +206,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
         star.forEach { (x, y) ->
             drawRect(
-                brush   = mainGradient,
+                brush   = brush,
                 topLeft = Offset(
                     x = centerX + x * pixel - pixel / 2f,
                     y = centerY + y * pixel - pixel / 2f,
@@ -215,7 +220,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * Отображает анимированную фразу с эффектом терминальной печати.
  *
- * Компонент циклически выбирает фразы из [KsenaxTypingPhrases], печатает их
+ * Компонент циклически выбирает фразы из [phrases], печатает их
  * посимвольно, удерживает на экране, затем стирает и переходит к следующей
  * фразе. Отдельный эффект управляет мигающим курсором, который визуально
  * имитирует ввод в консоли.
@@ -226,9 +231,14 @@ import kotlin.time.Duration.Companion.milliseconds
  * @since 0.2
  */
 @Composable internal fun TypingPhraseText(
+    textColor: Color,
+    phrases:   List<String>,
     isStarted: Boolean  = true,
     modifier:  Modifier = Modifier,
 ) {
+    require(phrases.isNotEmpty()) {
+        "TypingPhraseText requires at least one phrase"
+    }
 
     /**
      * Текущая напечатанная часть фразы
@@ -260,14 +270,16 @@ import kotlin.time.Duration.Companion.milliseconds
     /*
      * Печать фраз через отдельную корутину
      */
-    LaunchedEffect(isStarted) {
+    LaunchedEffect(isStarted, phrases) {
         if (!isStarted) {
             visibleText = ""
             return@LaunchedEffect
         }
 
-        var currentPhrase = KsenaxTypingPhrases.random()
-        var phraseDeck = KsenaxTypingPhrases
+        visibleText = ""
+
+        var currentPhrase = phrases.random()
+        var phraseDeck = phrases
             .shuffled()
             .filter { it != currentPhrase }
             .toMutableList()
@@ -290,13 +302,18 @@ import kotlin.time.Duration.Companion.milliseconds
 
             // снова колода фраз перемешивается, когда подошла к концу
             if (phraseDeck.isEmpty()) {
-                phraseDeck = KsenaxTypingPhrases
+                phraseDeck = phrases
                     .shuffled()
                     .filter { it != currentPhrase }
                     .toMutableList()
             }
 
-            val nextPhrase = phraseDeck.removeAt(0)
+            // Набор из одной фразы тоже является валидным тематическим набором.
+            val nextPhrase = if (phraseDeck.isEmpty()) {
+                currentPhrase
+            } else {
+                phraseDeck.removeAt(0)
+            }
             delay(180L.milliseconds)
 
             currentPhrase = nextPhrase
@@ -314,8 +331,8 @@ import kotlin.time.Duration.Companion.milliseconds
                 }
             }
         },
-        color      = Color(0xFF4FA9FF),
-        fontFamily = KsenaxFontFamily.minecraftFont,
+        color      = textColor,
+        fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
         fontSize   = 12.sp,
         lineHeight = 17.sp,
         textAlign  = TextAlign.Center,

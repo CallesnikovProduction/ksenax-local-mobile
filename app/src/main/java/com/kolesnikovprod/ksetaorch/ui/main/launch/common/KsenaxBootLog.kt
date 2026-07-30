@@ -69,7 +69,7 @@ internal fun BootLineText(
             )
         },
         color = lineColor,
-        fontFamily = KsenaxFontFamily.tiny5,
+        fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
         fontSize = BOOT_LINE_FONT_SIZE,
         lineHeight = BOOT_LINE_HEIGHT,
         maxLines = 1,

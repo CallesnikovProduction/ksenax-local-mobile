@@ -7,11 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.kolesnikovprod.ksetaorch.KsenaxAndroidApplication
 import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxTemporaricChatCoordinator
 import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxTemporaricChatEvent
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaIntegrityController
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaVerificationResult
-import com.kolesnikovprod.ksetaorch.ui.controllers.KsenaxGemmaVerificationStage
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaIntegrityController
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationResult
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationStage
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSupportedTextModel
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxMessage
+import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelFailureStage
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelGateState
 import kotlinx.coroutines.CancellationException
@@ -23,8 +24,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-private const val MODEL_PREPARED_CONFIRMATION_MILLIS = 250L
 
 /**
  * Process-only ViewModel сырого TEMPORARIC_PATTERN-чата.
@@ -40,7 +39,7 @@ private const val MODEL_PREPARED_CONFIRMATION_MILLIS = 250L
 class KsenaxTemporaricChatViewModel(
     private val chatCoordinator: KsenaxTemporaricChatCoordinator,
     private val integrityController: KsenaxGemmaIntegrityController,
-    private val modelTitle: String,
+    val modelTitle: String,
 ) : ViewModel() {
 
     private val mutableUiState = MutableStateFlow(KsenaxTemporaricChatUiState())
@@ -112,7 +111,11 @@ class KsenaxTemporaricChatViewModel(
                 startModelVerification(messageText)
 
             KsenaxBasicModelGateState.Ready ->
-                generateReply(messageText)
+                if (integrityController.isVerifiedInCurrentSession()) {
+                    generateReply(messageText)
+                } else {
+                    startModelVerification(messageText)
+                }
 
             else -> Unit
         }
@@ -158,7 +161,9 @@ class KsenaxTemporaricChatViewModel(
                                     KsenaxBasicModelGateState.ModelPrepared,
                             )
                         }
-                        delay(MODEL_PREPARED_CONFIRMATION_MILLIS)
+                        delay(
+                            KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS,
+                        )
                         mutableUiState.update { state ->
                             state.copy(
                                 modelGateState = KsenaxBasicModelGateState.Ready,
@@ -316,7 +321,6 @@ class KsenaxTemporaricChatViewModel(
     fun onCancelVerification() {
         verificationJob?.cancel()
         clearSession()
-        effectChannel.trySend(KsenaxTemporaricChatEffect.ExitToMain)
     }
 
     private fun clearSession() {

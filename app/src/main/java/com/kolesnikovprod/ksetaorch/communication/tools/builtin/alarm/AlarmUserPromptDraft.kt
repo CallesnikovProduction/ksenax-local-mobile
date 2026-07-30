@@ -75,7 +75,10 @@ internal object AlarmUserPromptDraft {
     private fun String.extractAmountBeforeUnit(unitPrefixes: Set<String>): Int? {
         val tokens = tokenize()
         val unitIndex = tokens.indexOfFirst { token ->
-            unitPrefixes.any(token::startsWith)
+            unitPrefixes.any { prefix ->
+                token == prefix ||
+                    (prefix.length > 1 && token.startsWith(prefix))
+            }
         }
         if (unitIndex <= 0) return null
         return tokens[unitIndex - 1].toRussianNumberOrNull()

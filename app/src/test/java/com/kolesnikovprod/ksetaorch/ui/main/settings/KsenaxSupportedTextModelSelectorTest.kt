@@ -39,4 +39,16 @@ class KsenaxSupportedTextModelSelectorTest {
             ),
         )
     }
+
+    @Test
+    fun noModelIsSelectedWhenNothingIsInstalled() {
+        assertEquals(
+            null,
+            KsenaxSupportedTextModelSelector.resolveSelectedInstalledModel(
+                currentSelection = KsenaxSupportedTextModel.Gemma,
+                isGemmaInstalled = false,
+                isFunctionGemmaInstalled = false,
+            ),
+        )
+    }
 }

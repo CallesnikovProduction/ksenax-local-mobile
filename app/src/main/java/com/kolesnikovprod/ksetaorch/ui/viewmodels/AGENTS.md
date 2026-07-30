@@ -62,7 +62,7 @@ State меняется через `copy`. Не мутировать вложен
 зависимость.
 
 Вычисляемые свойства `selectedMode`, `activeChat`,
-`isAgenticModeSelected` и `activeInstallProgress` дают экрану готовое
+`isAgenticModeSelected` и `activeInstallSnapshot` дают экрану готовое
 presentation-значение. Если вычисление зависит только от полей state и нужно в
 нескольких местах UI, его можно разместить рядом. Побочные эффекты здесь
 запрещены.
@@ -72,9 +72,22 @@ presentation-значение. Если вычисление зависит то
 ```text
 Hidden
 ModelOffer
-Downloading
-Unpacking
+Progress
+Completed
 ```
+
+`Progress` остаётся единым режимом для передачи, подготовки и install-проверки:
+конкретный этап строится из `KsenaxInstallSnapshot`. `Completed` удерживает
+финальные 100% на 450 мс с заблокированными действиями, после чего ViewModel
+передаёт управление самостоятельной post-install validation. Сворачивание
+overlay хранится в `isModelDownloadOverlayMinimized`, не останавливает
+coordinator и заменяет обычный bottom bar компактным download bar.
+
+`KsenaxPostInstallVerificationState` не содержит Compose-типов. MainViewModel
+публикует стадии `presence -> integrity -> reachability`, а mapper в
+`ui/main/download` преобразует их в контракт самостоятельного
+validation-overlay. Успешная проверка сохраняется только в foreground-session
+registry; уход приложения в background инвалидирует результат.
 
 `KsenaxInstallOverlayTarget` связывает UI-представление с Gemma 4 E2B,
 FunctionGemma или Vosk. Это presentation-target, а не download backend model.
@@ -115,7 +128,7 @@ Basic-поток:
 ```text
 KsenaxBasicChatScreen
     -> KsenaxBasicChatViewModel
-    -> KsenaxGemmaIntegrityController
+    -> controllers/modelvalidation/KsenaxGemmaIntegrityController
     -> KsenaxBasicChatCoordinator
     -> KsenaxChatRepository
     -> Room
@@ -126,7 +139,7 @@ Agentic-поток:
 ```text
 KsenaxAgenticChatScreen
     -> KsenaxAgenticChatViewModel
-    -> KsenaxCompositeModelIntegrityVerifier
+    -> controllers/modelvalidation/KsenaxCompositeModelIntegrityVerifier
     -> KsenaxAgenticWorkController
     -> KsenaxAgenticWorkRuntime
     -> G4 planning -> FunctionGemma one-shot action -> Android executor
@@ -139,7 +152,7 @@ Temporaric-поток:
 ```text
 KsenaxTemporaricChatScreen
     -> KsenaxTemporaricChatViewModel
-    -> KsenaxGemmaIntegrityController
+    -> controllers/modelvalidation/KsenaxGemmaIntegrityController
     -> KsenaxTemporaricChatCoordinator
     -> KsenaxModelSession.streamEphemeral
 ```
@@ -150,6 +163,12 @@ SavedStateHandle и не передаёт предыдущие turn-ы моде�
 
 Streaming delta хранится только в UI state. Итоговый или остановленный ответ
 записывается в Room одним сообщением.
+
+`modelGateState == Ready` не является вечным разрешением. Перед следующим
+turn-ом chat ViewModel также спрашивает integrity controller, действует ли
+успешная проверка в текущей foreground-сессии. После ухода приложения в
+background registry очищается, поэтому следующий запрос снова проходит
+presence/integrity gate, даже если сама ViewModel пережила сворачивание.
 
 Basic screen переиспользует voice-flow `KsenaxMainViewModel`: результат
 транскрипции приходит событием и дописывается в draft

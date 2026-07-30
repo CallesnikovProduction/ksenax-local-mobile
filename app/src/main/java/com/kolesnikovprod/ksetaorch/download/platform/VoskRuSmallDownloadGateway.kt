@@ -4,6 +4,7 @@ import android.content.Context
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxDownloadGateway
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadState
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTransferMetrics
 import java.io.File
 import java.util.zip.ZipFile
 
@@ -104,12 +105,25 @@ internal class VoskRuSmallDownloadGateway(
         val hasCompleteArchive = isCompleteVoskArchive(getModelFile())
 
         if (hasCompleteArchive) {
+            val archiveSizeBytes = getModelFile().length()
+            val completedTransferMetrics =
+                systemSnapshot?.transferMetrics?.copy(
+                    downloadedBytes = archiveSizeBytes,
+                    totalBytes = archiveSizeBytes,
+                    estimatedRemainingTimeSeconds = 0L,
+                ) ?: KsenaxDownloadTransferMetrics(
+                    downloadedBytes = archiveSizeBytes,
+                    totalBytes = archiveSizeBytes,
+                    estimatedRemainingTimeSeconds = 0L,
+                )
+
             return (systemSnapshot ?: KsenaxDownloadTaskSnapshot(
                 progress = 1f,
                 state = KsenaxDownloadState.SUCCESSFUL,
             )).copy(
                 progress = 1f,
                 state = KsenaxDownloadState.SUCCESSFUL,
+                transferMetrics = completedTransferMetrics,
             )
         }
 
