@@ -13,6 +13,8 @@ package com.kolesnikovprod.ksetaorch.communication.model
  * - [VOICE_TRANSCRIPTION] идёт через `transcribe` или stateless-запрос с
  *   [KsenaxVoiceMessage], потому что распознавание аудио не должно смешиваться
  *   с историей чата или router-а.
+ * - [TEXT_GENERATION] идёт через `askStateless` и даёт аддонам
+ *   одноразовую генерацию без доступа к persistent-истории OKx.
  *
  * @since 0.2
  * @author Stephan Kolesnikov
@@ -47,5 +49,15 @@ enum class KsenaxModelTaskProfile {
      *
      * @since 0.2
      */
-    VOICE_TRANSCRIPTION
+    VOICE_TRANSCRIPTION,
+
+    /**
+     * **ОДНОРАЗОВАЯ ТЕКСТОВАЯ ГЕНЕРАЦИЯ ДЛЯ ADDON MODEL PROVIDER.**
+     *
+     * Профиль не использует persistent conversation и не несёт
+     * router/tool-семантику. Каждый запрос самодостаточен.
+     *
+     * @since 0.3
+     */
+    TEXT_GENERATION,
 }

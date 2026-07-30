@@ -4,6 +4,11 @@ import android.app.Application
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.kolesnikovprod.ksetaorch.addons.OpenKsenaxAddonGraph
+import com.kolesnikovprod.ksetaorch.addons.catalog.AddonCatalogConfiguration
+import com.kolesnikovprod.ksetaorch.addons.modelprovider.ModelGenerationEngine
+import com.kolesnikovprod.ksetaorch.addons.modelprovider.ModelProviderDependencies
+import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistry
 import com.kolesnikovprod.ksetaorch.clean.KsenaxRuntimeCacheCleanupManager
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxLiteRtAudioBackend
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelRuntimeConfig
@@ -22,6 +27,7 @@ import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxComposi
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaIntegrityController
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelIntegrityVerifier
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelVerificationSessionRegistry
+import java.io.File
 
 /**
  * Process-level application object.
@@ -33,7 +39,7 @@ import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelVe
  * @since 0.2
  * @author Stephan Kolesnikov
  */
-class KsenaxAndroidApplication : Application() {
+class KsenaxAndroidApplication : Application(), ModelProviderDependencies {
 
     /**
      * Foreground-session кэш успешной проверки локальных моделей.
@@ -55,6 +61,28 @@ class KsenaxAndroidApplication : Application() {
         }
 
     /**
+     * Process-owned dependency graph addon-платформы OpenKsenax.
+     *
+     * @since 0.3
+     */
+    internal val addonGraph: OpenKsenaxAddonGraph by lazy {
+        OpenKsenaxAddonGraph(
+            context = this,
+            modelSession = gemmaModelSession,
+            isTextGenerationReady = ::isProviderTextGenerationReady,
+            configuration = AddonCatalogConfiguration.stable(
+                registryUrl = ADDON_REGISTRY_URL,
+            ),
+        )
+    }
+
+    override val addonRegistry: AddonRegistry
+        get() = addonGraph.registry
+
+    override val modelGenerationEngine: ModelGenerationEngine
+        get() = addonGraph.modelGenerationEngine
+
+    /**
      * Занимается очисткой runtime-cache, crash/session markers и подобным мусором.
      * @since 0.2
      */
@@ -70,6 +98,7 @@ class KsenaxAndroidApplication : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             modelVerificationLifecycleObserver,
         )
+        addonGraph.start()
     }
 
     /**
@@ -137,6 +166,9 @@ class KsenaxAndroidApplication : Application() {
             modelPath    = gemmaInstallUseCase.getGemma4E2BModelPath(),
             cacheDirPath = gemmaInstallUseCase.getGemma4E2BCacheDirPath(),
             audioBackend = KsenaxLiteRtAudioBackend.CPU,
+            runtimeConfig = KsenaxModelRuntimeConfig(
+                maxContextTokens = DEFAULT_TEXT_GENERATION_CONTEXT_TOKENS,
+            ),
         )
     }
 
@@ -178,4 +210,41 @@ class KsenaxAndroidApplication : Application() {
         KsenaxTemporaricChatCoordinator(functionGemmaModelSession)
     }
 
+    /**
+     * Быстрая fail-closed проверка готовности Provider API 1.
+     *
+     * Она не читает весь model-файл и не заменяет SHA-256 validation или
+     * cold-start engine. Полная проверка остаётся в model-validation contour,
+     * а синхронный Binder API получает только дешёвый readiness-сигнал:
+     * настроенный безопасный минимум контекста и обычный читаемый непустой
+     * файл в host-owned расположении.
+     *
+     * @since 0.3
+     */
+    private fun isProviderTextGenerationReady(): Boolean {
+        val contextTokens =
+            gemmaModelSession.runtimeConfig.maxContextTokens
+                ?: return false
+        if (contextTokens < MINIMUM_PROVIDER_CONTEXT_TOKENS) {
+            return false
+        }
+
+        return runCatching {
+            File(gemmaInstallUseCase.getGemma4E2BModelPath()).let { modelFile ->
+                modelFile.isFile &&
+                    modelFile.canRead() &&
+                    modelFile.length() > 0L
+            }
+        }.getOrDefault(false)
+    }
+
+    private companion object {
+        const val MINIMUM_PROVIDER_CONTEXT_TOKENS = 4_096
+        const val DEFAULT_TEXT_GENERATION_CONTEXT_TOKENS = 4_096
+
+        const val ADDON_REGISTRY_URL =
+            "https://raw.githubusercontent.com/" +
+                "CallesnikovProduction/openksenax-addons/" +
+                "main/registry/stable.json"
+    }
 }

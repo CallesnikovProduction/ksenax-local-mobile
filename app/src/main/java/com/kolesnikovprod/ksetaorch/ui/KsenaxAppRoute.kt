@@ -11,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 
 import com.kolesnikovprod.ksetaorch.KsenaxAndroidApplication
+import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogViewModel
 import com.kolesnikovprod.ksetaorch.ui.helpers.currentResponseModel
 import com.kolesnikovprod.ksetaorch.ui.helpers.rememberGeneralBackStackEntry
 import com.kolesnikovprod.ksetaorch.ui.helpers.rememberKsenaxApplication
@@ -110,6 +111,18 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             // и привязывается к текущему NavBackStackEntry.
             val mainViewModel: KsenaxMainViewModel = viewModel<KsenaxMainViewModel>()
 
+            val addonCatalogViewModel: AddonCatalogViewModel = viewModel(
+                key = "openksenax-addon-catalog",
+                factory = AddonCatalogViewModel.Factory(
+                    registry = application.addonGraph.registry,
+                    coordinator = application.addonGraph.coordinator,
+                    bannerRepository =
+                        application.addonGraph.bannerRepository,
+                    localStore =
+                        application.addonGraph.localStore,
+                ),
+            )
+
             val responseModel = mainViewModel.currentResponseModel()
 
             // Для временного чата уже создалась модель.
@@ -122,6 +135,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
 
             KsenaxMainScreen(
                 viewModel            = mainViewModel,
+                addonCatalogViewModel = addonCatalogViewModel,
                 appVersion           = ksenaxVersion,
 
                 /*
