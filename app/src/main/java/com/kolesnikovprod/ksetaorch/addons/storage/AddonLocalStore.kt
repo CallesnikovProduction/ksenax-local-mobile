@@ -71,7 +71,7 @@ internal data class InstalledAddonRecord(
 ) {
     init {
         require(schemaVersion == CURRENT_SCHEMA_VERSION)
-        require(addonId.isNotBlank())
+        require(runCatching { AddonId(addonId) }.isSuccess)
         require(packageName.isNotBlank())
         require(displayName.isNotBlank())
         require(versionCode > 0L)

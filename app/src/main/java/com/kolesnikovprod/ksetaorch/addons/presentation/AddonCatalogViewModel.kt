@@ -6,10 +6,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.kolesnikovprod.ksetaorch.addons.banner.AddonBannerLoadResult
 import com.kolesnikovprod.ksetaorch.addons.banner.AddonBannerRepository
+import com.kolesnikovprod.ksetaorch.addons.coordination.AddonActionFailure
 import com.kolesnikovprod.ksetaorch.addons.coordination.AddonActionResult
 import com.kolesnikovprod.ksetaorch.addons.coordination.AddonCoordinator
 import com.kolesnikovprod.ksetaorch.addons.coordination.AddonUninstallRequest
 import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallProgress
+import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallStage
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonBannerArtifact
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonInstallationState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistry
@@ -47,9 +49,11 @@ class AddonCatalogViewModel internal constructor(
 ) : ViewModel() {
 
     private val selectedAddonId = MutableStateFlow<AddonId?>(null)
+    private val pendingInstallConfirmationId =
+        MutableStateFlow<AddonId?>(null)
     private val actionMessage = MutableStateFlow<String?>(null)
-    private val installProgress =
-        MutableStateFlow<Map<AddonId, AddonInstallProgress>>(emptyMap())
+    private val installStates =
+        MutableStateFlow<Map<AddonId, AddonInstallUiState>>(emptyMap())
     private val bannerStates =
         MutableStateFlow<Map<AddonId, AddonBannerUiState>>(emptyMap())
     private val checkingUpdateIds =
@@ -64,7 +68,8 @@ class AddonCatalogViewModel internal constructor(
         MutableStateFlow<Set<AddonId>>(emptySet())
 
     private val bannerJobs = mutableMapOf<AddonId, Job>()
-    private val installJobs = mutableMapOf<AddonId, Job>()
+    private val installSessions =
+        mutableMapOf<AddonId, ActiveInstallSession>()
     private val updateJobs = mutableMapOf<AddonId, Job>()
     private val updateMessageExpiryJobs =
         mutableMapOf<AddonId, Job>()
@@ -72,6 +77,7 @@ class AddonCatalogViewModel internal constructor(
         mutableMapOf<AddonId, AddonUninstallRequest>()
     private val mutableEffects =
         Channel<AddonCatalogEffect>(capacity = Channel.BUFFERED)
+    private var manualRefreshJob: Job? = null
 
     internal val effects = mutableEffects.receiveAsFlow()
 
@@ -95,12 +101,14 @@ class AddonCatalogViewModel internal constructor(
     private val primaryState = combine(
         registryMappingState,
         selectedAddonId,
+        pendingInstallConfirmationId,
         actionMessage,
         infoOverlay,
-    ) { registryInput, selectedId, message, overlay ->
+    ) { registryInput, selectedId, confirmationId, message, overlay ->
         PrimaryMappingInput(
             registryState = registryInput.registryState,
             selectedAddonId = selectedId,
+            pendingInstallConfirmationId = confirmationId,
             actionMessage = message,
             infoOverlay = overlay,
             hiddenAvailableAddonIds =
@@ -109,13 +117,13 @@ class AddonCatalogViewModel internal constructor(
     }
 
     private val transientState = combine(
-        installProgress,
+        installStates,
         bannerStates,
         checkingUpdateIds,
         updateMessages,
-    ) { progress, banners, checkingIds, messages ->
+    ) { installs, banners, checkingIds, messages ->
         TransientMappingInput(
-            installProgress = progress,
+            installStates = installs,
             bannerStates = banners,
             checkingUpdateIds = checkingIds,
             updateMessages = messages,
@@ -129,8 +137,10 @@ class AddonCatalogViewModel internal constructor(
         AddonUiMapper.map(
             registryState = primary.registryState,
             selectedAddonId = primary.selectedAddonId,
+            pendingInstallConfirmationId =
+                primary.pendingInstallConfirmationId,
             actionMessage = primary.actionMessage,
-            installProgress = transient.installProgress,
+            installStates = transient.installStates,
             bannerStates = transient.bannerStates,
             checkingUpdateIds = transient.checkingUpdateIds,
             updateMessages = transient.updateMessages,
@@ -144,6 +154,7 @@ class AddonCatalogViewModel internal constructor(
         initialValue = AddonUiMapper.map(
             registryState = registry.state.value,
             selectedAddonId = null,
+            pendingInstallConfirmationId = null,
             actionMessage = null,
         ),
     )
@@ -172,6 +183,7 @@ class AddonCatalogViewModel internal constructor(
                 }
                 clearMissingSelection(state)
                 clearMissingInfoOverlay(state)
+                clearMissingInstallConfirmation(state)
             }
         }
     }
@@ -183,8 +195,13 @@ class AddonCatalogViewModel internal constructor(
      * @since 0.3
      */
     internal fun refresh() {
+        pendingInstallConfirmationId.value = null
         hiddenAvailableAddonIds.value = emptySet()
-        refreshRegistry(
+        clearFailedAvailableInstalls()
+        manualRefreshJob?.cancel(
+            CancellationException("Manual addon refresh restarted"),
+        )
+        manualRefreshJob = refreshRegistry(
             mode = AddonRegistryRefreshMode.FORCE_REMOTE,
             retryUnavailableBanners = true,
         )
@@ -207,8 +224,8 @@ class AddonCatalogViewModel internal constructor(
     private fun refreshRegistry(
         mode: AddonRegistryRefreshMode,
         retryUnavailableBanners: Boolean,
-    ) {
-        viewModelScope.launch {
+    ): Job {
+        return viewModelScope.launch {
             actionMessage.value = null
             try {
                 val state = registry.refresh(mode)
@@ -218,11 +235,20 @@ class AddonCatalogViewModel internal constructor(
                     retryUnavailable = retryUnavailableBanners,
                 )
                 clearMissingSelection(state)
+                clearMissingInstallConfirmation(state)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
                 actionMessage.value =
                     error.message ?: "Не удалось обновить каталог аддонов"
+            }
+        }
+    }
+
+    private fun clearFailedAvailableInstalls() {
+        installStates.update { states ->
+            states.filterValues { state ->
+                state !is AddonInstallUiState.Failed
             }
         }
     }
@@ -235,6 +261,19 @@ class AddonCatalogViewModel internal constructor(
             }
         ) {
             selectedAddonId.value = null
+        }
+    }
+
+    private fun clearMissingInstallConfirmation(
+        state: AddonRegistryState,
+    ) {
+        val pending = pendingInstallConfirmationId.value ?: return
+        if (
+            state.addons.none { addon ->
+                addon.addonId == pending && !addon.isInstalled
+            }
+        ) {
+            pendingInstallConfirmationId.value = null
         }
     }
 
@@ -353,6 +392,7 @@ class AddonCatalogViewModel internal constructor(
     }
 
     internal fun selectAddon(addonId: AddonId) {
+        pendingInstallConfirmationId.value = null
         val addon = registry.find(addonId)
         if (addon?.isInstalled != true) return
         selectedAddonId.value = if (
@@ -366,8 +406,18 @@ class AddonCatalogViewModel internal constructor(
 
     internal fun closeManagement() {
         selectedAddonId.value = null
+        pendingInstallConfirmationId.value = null
         infoOverlay.value = null
         actionMessage.value = null
+    }
+
+    /**
+     * Закрывает ленивое подтверждение установки при нажатии вне карточки.
+     *
+     * @since 0.3
+     */
+    internal fun dismissInstallConfirmation() {
+        pendingInstallConfirmationId.value = null
     }
 
     internal fun openAddon(addonId: AddonId) {
@@ -484,13 +534,16 @@ class AddonCatalogViewModel internal constructor(
 
     private fun clearAddonTransientState(addonId: AddonId) {
         bannerJobs.remove(addonId)?.cancel()
-        installJobs.remove(addonId)?.cancel()
+        installSessions.remove(addonId)?.cancel()
         updateJobs.remove(addonId)?.cancel()
         updateMessageExpiryJobs.remove(addonId)?.cancel()
         bannerStates.update { states -> states - addonId }
-        installProgress.update { progress -> progress - addonId }
+        installStates.update { states -> states - addonId }
         checkingUpdateIds.update { ids -> ids - addonId }
         updateMessages.update { messages -> messages - addonId }
+        if (pendingInstallConfirmationId.value == addonId) {
+            pendingInstallConfirmationId.value = null
+        }
     }
 
     internal fun onUninstallSystemUiLaunchFailed(
@@ -505,34 +558,85 @@ class AddonCatalogViewModel internal constructor(
     }
 
     /**
-     * Первый вызов начинает download, повторный во время download отменяет его.
+     * Первый вызов вооружает карточку, второй начинает download.
+     * Нажатие во время активной загрузки отменяет только эту установку.
      *
      * @since 0.3
      */
     internal fun install(addonId: AddonId) {
-        installJobs[addonId]
-            ?.takeIf(Job::isActive)
-            ?.let { job ->
-                job.cancel(
+        installSessions[addonId]
+            ?.takeIf { session -> session.job.isActive }
+            ?.let { session ->
+                session.job.cancel(
                     CancellationException("Cancelled by user"),
                 )
                 return
             }
 
+        if (
+            installStates.value[addonId] is
+            AddonInstallUiState.Failed
+        ) {
+            return
+        }
+
+        if (pendingInstallConfirmationId.value != addonId) {
+            pendingInstallConfirmationId.value = addonId
+            actionMessage.value = null
+            return
+        }
+
+        pendingInstallConfirmationId.value = null
+        startInstall(addonId)
+    }
+
+    private fun startInstall(addonId: AddonId) {
+        val connectionMonitor = AddonInstallConnectionMonitor()
         lateinit var installJob: Job
         installJob = viewModelScope.launch(
             start = CoroutineStart.LAZY,
         ) {
             actionMessage.value = null
+            installStates.update { current ->
+                current + (
+                    addonId to AddonInstallUiState.Active(
+                        progress = AddonInstallProgress(
+                            stage = AddonInstallStage.DOWNLOADING,
+                        ),
+                    )
+                    )
+            }
             try {
                 val result = coordinator.requestInstall(addonId) { progress ->
-                    installProgress.update { current ->
-                        current + (addonId to progress)
+                    connectionMonitor.update(progress)
+                    val quality = connectionMonitor.currentQuality()
+                    viewModelScope.launch {
+                        publishInstallProgress(
+                            addonId = addonId,
+                            installJob = installJob,
+                            progress = progress,
+                            connectionQuality = quality,
+                        )
                     }
                 }
-                handle(result)
+                if (
+                    result is AddonActionResult.Failed &&
+                    result.reason ==
+                    AddonActionFailure.NETWORK_UNAVAILABLE
+                ) {
+                    installStates.update { current ->
+                        current + (
+                            addonId to AddonInstallUiState.Failed(
+                                AddonInstallFailureUiReason.NO_INTERNET,
+                            )
+                            )
+                    }
+                    actionMessage.value = null
+                } else {
+                    handle(result)
+                }
             } catch (cancellation: CancellationException) {
-                if (installJobs[addonId] === installJob) {
+                if (installSessions[addonId]?.job === installJob) {
                     actionMessage.value = "Загрузка аддона отменена"
                 }
                 throw cancellation
@@ -540,16 +644,74 @@ class AddonCatalogViewModel internal constructor(
                 actionMessage.value =
                     error.message ?: "Установка аддона не выполнена"
             } finally {
-                installProgress.update { current ->
-                    current - addonId
-                }
-                if (installJobs[addonId] === installJob) {
-                    installJobs.remove(addonId)
+                val session = installSessions[addonId]
+                if (session?.job === installJob) {
+                    installSessions.remove(addonId)
+                    session.healthJob?.cancel()
+                    installStates.update { current ->
+                        if (
+                            current[addonId] is
+                            AddonInstallUiState.Failed
+                        ) {
+                            current
+                        } else {
+                            current - addonId
+                        }
+                    }
                 }
             }
         }
-        installJobs[addonId] = installJob
+        val session = ActiveInstallSession(
+            job = installJob,
+            connectionMonitor = connectionMonitor,
+        )
+        installSessions[addonId] = session
         installJob.start()
+        session.healthJob = monitorInstallConnection(
+            addonId = addonId,
+            session = session,
+        )
+    }
+
+    private fun monitorInstallConnection(
+        addonId: AddonId,
+        session: ActiveInstallSession,
+    ): Job {
+        return viewModelScope.launch {
+            while (session.job.isActive) {
+                delay(INSTALL_CONNECTION_POLL_MILLIS)
+                val active = installStates.value[addonId]
+                    as? AddonInstallUiState.Active
+                    ?: continue
+                publishInstallProgress(
+                    addonId = addonId,
+                    installJob = session.job,
+                    progress = active.progress,
+                    connectionQuality =
+                        session.connectionMonitor.currentQuality(),
+                )
+            }
+        }
+    }
+
+    private fun publishInstallProgress(
+        addonId: AddonId,
+        installJob: Job,
+        progress: AddonInstallProgress,
+        connectionQuality: AddonInstallConnectionQuality,
+    ) {
+        installStates.update { current ->
+            if (installSessions[addonId]?.job !== installJob) {
+                current
+            } else {
+                current + (
+                    addonId to AddonInstallUiState.Active(
+                        progress = progress,
+                        connectionQuality = connectionQuality,
+                    )
+                    )
+            }
+        }
     }
 
     internal fun checkForUpdates(addonId: AddonId) {
@@ -834,6 +996,7 @@ private fun InstalledAddonRecord.toInfoUiModel(): AddonInfoUiModel {
 private data class PrimaryMappingInput(
     val registryState: AddonRegistryState,
     val selectedAddonId: AddonId?,
+    val pendingInstallConfirmationId: AddonId?,
     val actionMessage: String?,
     val infoOverlay: AddonInfoUiModel?,
     val hiddenAvailableAddonIds: Set<AddonId>,
@@ -845,7 +1008,7 @@ private data class RegistryMappingInput(
 )
 
 private data class TransientMappingInput(
-    val installProgress: Map<AddonId, AddonInstallProgress>,
+    val installStates: Map<AddonId, AddonInstallUiState>,
     val bannerStates: Map<AddonId, AddonBannerUiState>,
     val checkingUpdateIds: Set<AddonId>,
     val updateMessages: Map<AddonId, String>,
@@ -858,6 +1021,19 @@ private data class BannerLoadRequest(
 )
 
 private const val UPDATE_MESSAGE_VISIBLE_MILLIS = 3_000L
+private const val INSTALL_CONNECTION_POLL_MILLIS = 1_000L
+
+private class ActiveInstallSession(
+    val job: Job,
+    val connectionMonitor: AddonInstallConnectionMonitor,
+) {
+    var healthJob: Job? = null
+
+    fun cancel() {
+        healthJob?.cancel()
+        job.cancel()
+    }
+}
 
 /**
  * Одноразовый Android UI-effect coordination-контура.

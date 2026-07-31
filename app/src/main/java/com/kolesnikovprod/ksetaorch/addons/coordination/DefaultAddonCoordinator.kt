@@ -14,6 +14,7 @@ import com.kolesnikovprod.ksetaorch.addons.registry.AddonManagementBlockReason
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonManagementEndpoint
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistry
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryRefreshMode
+import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistrySourceFailureKind
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistrySourceStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -49,7 +50,7 @@ internal class DefaultAddonCoordinator(
             AddonRegistrySourceStatus.Fresh
         ) {
             return failed(
-                AddonActionFailure.REGISTRY_SOURCE_UNAVAILABLE,
+                registryState.catalogStatus.installFailure(),
                 "A current registry snapshot is required for installation",
             )
         }
@@ -237,9 +238,14 @@ internal class DefaultAddonCoordinator(
             when (commandResult.status) {
                 AddonCommandStatus.SUCCESS,
                 AddonCommandStatus.ALREADY_IN_REQUESTED_STATE -> {
-                    AddonActionResult.RuntimeStateChanged(
-                        requireNotNull(response.runtimeStatus),
-                    )
+                    response.runtimeStatus
+                        ?.let(
+                            AddonActionResult::RuntimeStateChanged,
+                        )
+                        ?: failed(
+                            AddonActionFailure.REMOTE_COMMAND_FAILED,
+                            "Addon returned success without runtime status",
+                        )
                 }
 
                 AddonCommandStatus.REJECTED,
@@ -364,6 +370,9 @@ internal class DefaultAddonCoordinator(
     private fun AddonArtifactFailure.toActionFailure():
             AddonActionFailure {
         return when (this) {
+            AddonArtifactFailure.NETWORK_UNAVAILABLE ->
+                AddonActionFailure.NETWORK_UNAVAILABLE
+
             AddonArtifactFailure.UNSAFE_DOWNLOAD_URL,
             AddonArtifactFailure.DOWNLOAD_FAILED ->
                 AddonActionFailure.DOWNLOAD_FAILED
@@ -376,6 +385,25 @@ internal class DefaultAddonCoordinator(
             AddonArtifactFailure.SIGNATURE_MISMATCH,
             AddonArtifactFailure.MANIFEST_MISMATCH ->
                 AddonActionFailure.APK_VERIFICATION_FAILED
+        }
+    }
+
+    private fun AddonRegistrySourceStatus.installFailure():
+            AddonActionFailure {
+        val failureKind = when (this) {
+            is AddonRegistrySourceStatus.Stale -> failureKind
+            is AddonRegistrySourceStatus.Unavailable -> failureKind
+            AddonRegistrySourceStatus.Fresh,
+            AddonRegistrySourceStatus.NotLoaded,
+            -> null
+        }
+        return if (
+            failureKind ==
+            AddonRegistrySourceFailureKind.NETWORK_UNAVAILABLE
+        ) {
+            AddonActionFailure.NETWORK_UNAVAILABLE
+        } else {
+            AddonActionFailure.REGISTRY_SOURCE_UNAVAILABLE
         }
     }
 

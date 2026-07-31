@@ -109,6 +109,9 @@ internal class KtorAddonApkDownloader(
             AddonRemoteFileFailure.SIZE_MISMATCH ->
                 AddonArtifactFailure.FILE_SIZE_MISMATCH
 
+            AddonRemoteFileFailure.NETWORK_UNAVAILABLE ->
+                AddonArtifactFailure.NETWORK_UNAVAILABLE
+
             AddonRemoteFileFailure.TRANSFER_FAILED ->
                 AddonArtifactFailure.DOWNLOAD_FAILED
         }

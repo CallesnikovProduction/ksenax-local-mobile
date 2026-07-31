@@ -230,6 +230,7 @@ internal class KtorVerifiedAddonBannerRepository(
             AddonRemoteFileFailure.SIZE_MISMATCH ->
                 AddonBannerFailure.SIZE_LIMIT_EXCEEDED
 
+            AddonRemoteFileFailure.NETWORK_UNAVAILABLE,
             AddonRemoteFileFailure.TRANSFER_FAILED ->
                 AddonBannerFailure.DOWNLOAD_FAILED
         }

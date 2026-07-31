@@ -2,6 +2,8 @@ package com.kolesnikovprod.ksetaorch.addons.presentation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -33,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,21 +56,25 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.addons.banner.AddonBannerContract
 import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallStage
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxBackArrowButton
 import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.PixelGradientSpinner
 import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
-import com.kolesnikovprod.ksetaorch.ui.main.topbar.PixelMenuButton
 import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
 import dev.openksenax.addons.contract.AddonId
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.ceil
+import kotlinx.coroutines.isActive
 
 private val AddonsBackground = Color(0xFF07070D)
 private val AddonsSurface = Color(0xFF111019)
@@ -77,7 +84,11 @@ private val AddonsGreen = Color(0xFF47E77B)
 private val AddonsWarning = Color(0xFFFFB65C)
 private val AddonsDanger = Color(0xFFFF6B73)
 private val AddonsGold = Color(0xFFFFC857)
+private val AddonsLink = Color(0xFF69B7FF)
 private val PixelWaveRows = intArrayOf(0, -1, -1, -1, 0, 1, 1, 1)
+private const val REFRESH_HALF_TURN_DEGREES = 180f
+private const val REFRESH_HALF_TURN_MILLIS = 160
+private const val REFRESH_SETTLE_MILLIS = 180
 
 /**
  * Полноэкранная host-витрина аддонов, выезжающая справа.
@@ -98,6 +109,7 @@ internal fun AddonCatalogScreen(
     onCloseManagement: () -> Unit,
     onOpenAddon: (AddonId) -> Unit,
     onInstallAddon: (AddonId) -> Unit,
+    onDismissInstallConfirmation: () -> Unit,
     onShowInfo: (AddonId) -> Unit,
     onCheckForUpdates: (AddonId) -> Unit,
     onUninstallAddon: (AddonId) -> Unit,
@@ -110,6 +122,8 @@ internal fun AddonCatalogScreen(
         when {
             state.infoOverlay != null -> onDismissInfo()
             state.selectedCard != null -> onCloseManagement()
+            state.pendingInstallConfirmationId != null ->
+                onDismissInstallConfirmation()
             else -> onDismiss()
         }
     }
@@ -138,10 +152,14 @@ internal fun AddonCatalogScreen(
                 onSelectAddon = onSelectAddon,
                 onOpenAddon = onOpenAddon,
                 onInstallAddon = onInstallAddon,
+                onDismissInstallConfirmation =
+                    onDismissInstallConfirmation,
                 onShowInfo = onShowInfo,
                 onCheckForUpdates = onCheckForUpdates,
                 onUninstallAddon = onUninstallAddon,
+                modifier = Modifier.weight(1f),
             )
+            AddonsEarlyTestingBottomBar()
         }
 
         state.infoOverlay?.let { info ->
@@ -160,6 +178,43 @@ private fun AddonsTopBar(
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val refreshRotation = remember {
+        Animatable(0f)
+    }
+    LaunchedEffect(isRefreshing) {
+        if (isRefreshing) {
+            while (isActive) {
+                refreshRotation.animateTo(
+                    targetValue =
+                        refreshRotation.value +
+                            REFRESH_HALF_TURN_DEGREES,
+                    animationSpec = tween(
+                        durationMillis = REFRESH_HALF_TURN_MILLIS,
+                        easing = LinearEasing,
+                    ),
+                )
+                if (refreshRotation.value >= 3_600f) {
+                    refreshRotation.snapTo(
+                        refreshRotation.value % 360f,
+                    )
+                }
+            }
+        } else {
+            val restingRotation =
+                ceil(
+                    refreshRotation.value /
+                        REFRESH_HALF_TURN_DEGREES,
+                ).toFloat() * REFRESH_HALF_TURN_DEGREES
+            refreshRotation.animateTo(
+                targetValue = restingRotation,
+                animationSpec = tween(
+                    durationMillis = REFRESH_SETTLE_MILLIS,
+                ),
+            )
+            refreshRotation.snapTo(restingRotation % 360f)
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -169,10 +224,12 @@ private fun AddonsTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        PixelMenuButton(
+        KsenaxBackArrowButton(
             brush = theme.controlsBrush,
-            rotation = 90f,
             onClick = onDismiss,
+            pointsLeft = true,
+            contentDescription = "Закрыть панель аддонов",
+            modifier = Modifier.size(44.dp),
         )
 
         Text(
@@ -187,7 +244,6 @@ private fun AddonsTopBar(
 
         KsenaxPressableBox(
             onClick = onRefresh,
-            enabled = !isRefreshing,
             modifier = Modifier
                 .size(44.dp)
                 .clip(RoundedCornerShape(8.dp)),
@@ -205,7 +261,11 @@ private fun AddonsTopBar(
                         theme.mutedColor
                     }
                     ).whileKsenaxPressed(pressed),
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier
+                    .size(36.dp)
+                    .graphicsLayer {
+                        rotationZ = refreshRotation.value
+                    },
             )
         }
     }
@@ -218,98 +278,147 @@ private fun AddonCatalogContent(
     onSelectAddon: (AddonId) -> Unit,
     onOpenAddon: (AddonId) -> Unit,
     onInstallAddon: (AddonId) -> Unit,
+    onDismissInstallConfirmation: () -> Unit,
     onShowInfo: (AddonId) -> Unit,
     onCheckForUpdates: (AddonId) -> Unit,
     onUninstallAddon: (AddonId) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var installedExpanded by rememberSaveable {
         mutableStateOf(true)
     }
+    val backgroundInteractionSource = remember {
+        MutableInteractionSource()
+    }
     val installed = state.cards.filter(AddonCardUiModel::isInstalled)
     val available = state.cards.filterNot(AddonCardUiModel::isInstalled)
 
-    Column(
-        modifier = Modifier
+    Box(
+        modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .clickable(
+                enabled =
+                    state.pendingInstallConfirmationId != null,
+                interactionSource = backgroundInteractionSource,
+                indication = null,
+                onClick = onDismissInstallConfirmation,
+            ),
     ) {
-        state.actionMessage?.let { message ->
-            Text(
-                text = message,
-                color = AddonsWarning,
-                fontFamily =
-                    KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
-                fontSize = 13.sp,
-                lineHeight = 17.sp,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            AddonCatalogSections(
+                state = state,
+                theme = theme,
+                installed = installed,
+                available = available,
+                installedExpanded = installedExpanded,
+                onInstalledExpandedChange = { expanded ->
+                    installedExpanded = expanded
+                },
+                onSelectAddon = onSelectAddon,
+                onOpenAddon = onOpenAddon,
+                onInstallAddon = onInstallAddon,
+                onShowInfo = onShowInfo,
+                onCheckForUpdates = onCheckForUpdates,
+                onUninstallAddon = onUninstallAddon,
             )
         }
+    }
+}
 
-        CollapsibleSectionTitle(
-            title = "Установленные",
-            expanded = installedExpanded,
-            onToggle = {
-                installedExpanded = !installedExpanded
-            },
+@Composable
+private fun AddonCatalogSections(
+    state: AddonCatalogUiState,
+    theme: KsenaxThemeVisuals,
+    installed: List<AddonCardUiModel>,
+    available: List<AddonCardUiModel>,
+    installedExpanded: Boolean,
+    onInstalledExpandedChange: (Boolean) -> Unit,
+    onSelectAddon: (AddonId) -> Unit,
+    onOpenAddon: (AddonId) -> Unit,
+    onInstallAddon: (AddonId) -> Unit,
+    onShowInfo: (AddonId) -> Unit,
+    onCheckForUpdates: (AddonId) -> Unit,
+    onUninstallAddon: (AddonId) -> Unit,
+) {
+    state.actionMessage?.let { message ->
+        Text(
+            text = message,
+            color = AddonsWarning,
+            fontFamily =
+                KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+            fontSize = 13.sp,
+            lineHeight = 17.sp,
         )
+    }
 
-        AnimatedVisibility(
-            visible = installedExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut(),
+    CollapsibleSectionTitle(
+        title = "Установленные",
+        expanded = installedExpanded,
+        onToggle = {
+            onInstalledExpandedChange(!installedExpanded)
+        },
+    )
+
+    AnimatedVisibility(
+        visible = installedExpanded,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                if (installed.isEmpty()) {
-                    EmptySectionText("Установленных аддонов пока нет")
-                } else {
-                    installed.forEach { card ->
-                        InstalledAddonItem(
-                            card = card,
-                            expanded =
-                                state.selectedAddonId == card.addonId,
-                            theme = theme,
-                            onToggle = {
-                                onSelectAddon(card.addonId)
-                            },
-                            onOpen = {
-                                onOpenAddon(card.addonId)
-                            },
-                            onInfo = {
-                                onShowInfo(card.addonId)
-                            },
-                            onCheckForUpdates = {
-                                onCheckForUpdates(card.addonId)
-                            },
-                            onUninstall = {
-                                onUninstallAddon(card.addonId)
-                            },
-                        )
-                    }
+            if (installed.isEmpty()) {
+                EmptySectionText("Установленных аддонов пока нет")
+            } else {
+                installed.forEach { card ->
+                    InstalledAddonItem(
+                        card = card,
+                        expanded =
+                            state.selectedAddonId == card.addonId,
+                        theme = theme,
+                        onToggle = {
+                            onSelectAddon(card.addonId)
+                        },
+                        onOpen = {
+                            onOpenAddon(card.addonId)
+                        },
+                        onInfo = {
+                            onShowInfo(card.addonId)
+                        },
+                        onCheckForUpdates = {
+                            onCheckForUpdates(card.addonId)
+                        },
+                        onUninstall = {
+                            onUninstallAddon(card.addonId)
+                        },
+                    )
                 }
             }
         }
-
-        SectionTitle("Доступные к скачиванию")
-
-        if (available.isEmpty()) {
-            EmptySectionText("Новых аддонов в каталоге пока нет")
-        } else {
-            available.forEach { card ->
-                AvailableAddonItem(
-                    card = card,
-                    onInstallOrCancel = {
-                        onInstallAddon(card.addonId)
-                    },
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
     }
+
+    SectionTitle("Доступные к скачиванию")
+
+    if (available.isEmpty()) {
+        EmptySectionText("Новых аддонов в каталоге пока нет")
+    } else {
+        available.forEach { card ->
+            AvailableAddonItem(
+                card = card,
+                onInstallOrCancel = {
+                    onInstallAddon(card.addonId)
+                },
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
 }
 
 @Composable
@@ -381,7 +490,10 @@ private fun InstalledAddonItem(
             colorized = true,
             onClick = onToggle,
         )
-        AddonIdentityLine(card)
+        AddonIdentityLine(
+            card = card,
+            showDescription = true,
+        )
 
         AnimatedVisibility(
             visible = expanded,
@@ -417,8 +529,22 @@ private fun AvailableAddonItem(
             enabled = card.canInstall || card.isInstallInProgress,
             showDownloadChrome = true,
         )
-        AddonIdentityLine(card)
-        if (!card.canInstall && !card.isInstallInProgress) {
+        AnimatedVisibility(
+            visible = card.isInstallConfirmationVisible,
+            enter = expandVertically(
+                animationSpec = tween(190),
+            ) + fadeIn(),
+            exit = shrinkVertically(
+                animationSpec = tween(150),
+            ) + fadeOut(),
+        ) {
+            AvailableAddonDescription(card)
+        }
+        if (
+            !card.canInstall &&
+            !card.isInstallInProgress &&
+            !card.hasInstallFailure
+        ) {
             Text(
                 text = card.compatibilityLabel,
                 color = AddonsWarning,
@@ -432,7 +558,75 @@ private fun AvailableAddonItem(
 }
 
 @Composable
-private fun AddonIdentityLine(card: AddonCardUiModel) {
+private fun AvailableAddonDescription(card: AddonCardUiModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(AddonsSurface)
+            .border(
+                width = 1.dp,
+                color = AddonsBorder,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = card.title,
+            color = Color.White,
+            fontFamily =
+                KsenaxFontFamily
+                    .LOGOS_AND_HEADLINES_JERSEY_10_REGULAR,
+            fontSize = 22.sp,
+            lineHeight = 24.sp,
+        )
+        Text(
+            text = card.description,
+            color = AddonsMuted,
+            fontFamily =
+                KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+        )
+    }
+}
+
+@Composable
+private fun AddonsEarlyTestingBottomBar() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(AddonsSurface)
+            .navigationBarsPadding(),
+    ) {
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(AddonsBorder),
+        )
+        Text(
+            text = "Находится на раннем тестировании, потенциально будет " +
+                "развиваться для разработки извне",
+            color = AddonsMuted.copy(alpha = 0.62f),
+            fontFamily =
+                KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+            fontSize = 10.sp,
+            lineHeight = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun AddonIdentityLine(
+    card: AddonCardUiModel,
+    showDescription: Boolean,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -451,14 +645,16 @@ private fun AddonIdentityLine(card: AddonCardUiModel) {
                 fontSize = 24.sp,
                 lineHeight = 25.sp,
             )
-            Text(
-                text = card.description,
-                color = AddonsMuted,
-                fontFamily =
-                    KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
-            )
+            if (showDescription) {
+                Text(
+                    text = card.description,
+                    color = AddonsMuted,
+                    fontFamily =
+                        KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                )
+            }
         }
         Text(
             text = card.versionLabel,
@@ -636,16 +832,25 @@ private fun AddonBanner(
             )
         }
 
-        if (pressed || card.isInstallInProgress) {
+        if (
+            pressed ||
+            card.isInstallConfirmationVisible ||
+            card.installState !is AddonInstallUiState.Idle
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Color.Black.copy(
                             alpha = if (
-                                card.isInstallInProgress
+                                card.isInstallConfirmationVisible
                             ) {
-                                0.46f
+                                0.84f
+                            } else if (
+                                card.installState !is
+                                AddonInstallUiState.Idle
+                            ) {
+                                0.52f
                             } else {
                                 0.2f
                             },
@@ -654,41 +859,98 @@ private fun AddonBanner(
             )
         }
 
+        if (card.isInstallConfirmationVisible) {
+            Text(
+                text = "Нажмите еще раз для установки",
+                color = Color.White,
+                fontFamily =
+                    KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 22.dp),
+            )
+        }
+
         if (showDownloadChrome) {
             DownloadArrow(
-                weakConnection = card.isWeakConnection,
+                color = when (val install = card.installState) {
+                    is AddonInstallUiState.Active ->
+                        if (
+                            install.connectionQuality ==
+                            AddonInstallConnectionQuality.WEAK
+                        ) {
+                            AddonsGold
+                        } else {
+                            AddonsMuted
+                        }
+
+                    is AddonInstallUiState.Failed -> AddonsDanger
+                    AddonInstallUiState.Idle -> AddonsMuted
+                },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(14.dp),
             )
         }
 
-        if (card.isInstallInProgress) {
-            WavyDownloadProgress(
-                fraction = card.installProgress ?: if (
-                    card.installStage ==
-                    AddonInstallStage.DOWNLOADING
-                ) {
-                    0f
-                } else {
-                    1f
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 18.dp),
-            )
+        when (val install = card.installState) {
+            is AddonInstallUiState.Active -> {
+                val isWeak =
+                    install.connectionQuality ==
+                        AddonInstallConnectionQuality.WEAK
+                AddonInstallProgressOverlay(
+                    fraction = install.progress.fraction
+                        ?: if (
+                            install.progress.stage ==
+                            AddonInstallStage.DOWNLOADING
+                        ) {
+                            0f
+                        } else {
+                            1f
+                        },
+                    color = if (isWeak) AddonsGold else AddonsGreen,
+                    message = if (isWeak) {
+                        "Слабый Интернет"
+                    } else {
+                        "Аддон устанавливается"
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp),
+                )
+            }
+
+            is AddonInstallUiState.Failed -> {
+                when (install.reason) {
+                    AddonInstallFailureUiReason.NO_INTERNET ->
+                        AddonInstallProgressOverlay(
+                            fraction = 1f,
+                            color = AddonsDanger,
+                            message =
+                                "Интернета нет. Нажмите рефреш-кнопку",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 18.dp),
+                        )
+                }
+            }
+
+            AddonInstallUiState.Idle -> Unit
         }
     }
 }
 
 @Composable
 private fun DownloadArrow(
-    weakConnection: Boolean,
+    color: Color,
     modifier: Modifier = Modifier,
 ) {
     Text(
         text = "↓",
-        color = if (weakConnection) AddonsGold else AddonsMuted,
+        color = color,
         fontFamily = KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
         fontSize = 27.sp,
         modifier = modifier,
@@ -696,8 +958,10 @@ private fun DownloadArrow(
 }
 
 @Composable
-private fun WavyDownloadProgress(
+private fun AddonInstallProgressOverlay(
     fraction: Float,
+    color: Color,
+    message: String,
     modifier: Modifier = Modifier,
 ) {
     val animatedFraction by animateFloatAsState(
@@ -706,43 +970,59 @@ private fun WavyDownloadProgress(
         label = "addon_wavy_download_progress",
     )
 
-    Canvas(modifier = modifier) {
-        val right = size.width
-        val centerY = size.height * 0.74f
-        val pixelSize = 3.dp.toPx()
+    Box(modifier = modifier) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val right = size.width
+            val centerY = size.height * 0.74f
+            val pixelSize = 3.dp.toPx()
 
-        fun drawPixelWave(
-            color: Color,
-            maxRight: Float,
-        ) {
-            var x = 0f
-            var column = 0
-            while (x + pixelSize <= maxRight) {
-                val row = PixelWaveRows[
-                    column % PixelWaveRows.size
-                ]
-                drawRect(
-                    color = color,
-                    topLeft = Offset(
-                        x = x,
-                        y = centerY +
-                            row * pixelSize -
-                            pixelSize / 2f,
-                    ),
-                    size = Size(pixelSize, pixelSize),
-                )
-                x += pixelSize
-                column += 1
+            fun drawPixelWave(
+                waveColor: Color,
+                maxRight: Float,
+            ) {
+                var x = 0f
+                var column = 0
+                while (x + pixelSize <= maxRight) {
+                    val row = PixelWaveRows[
+                        column % PixelWaveRows.size
+                    ]
+                    drawRect(
+                        color = waveColor,
+                        topLeft = Offset(
+                            x = x,
+                            y = centerY +
+                                row * pixelSize -
+                                pixelSize / 2f,
+                        ),
+                        size = Size(pixelSize, pixelSize),
+                    )
+                    x += pixelSize
+                    column += 1
+                }
             }
+
+            drawPixelWave(
+                waveColor = AddonsMuted.copy(alpha = 0.72f),
+                maxRight = right,
+            )
+            drawPixelWave(
+                waveColor = color,
+                maxRight = right * animatedFraction,
+            )
         }
 
-        drawPixelWave(
-            color = AddonsMuted.copy(alpha = 0.72f),
-            maxRight = right,
-        )
-        drawPixelWave(
-            color = AddonsGreen,
-            maxRight = right * animatedFraction,
+        Text(
+            text = message,
+            color = color,
+            fontFamily =
+                KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 42.dp),
         )
     }
 }
@@ -828,6 +1108,7 @@ private fun AddonInfoOverlay(
     val interactionSource = remember {
         MutableInteractionSource()
     }
+    val uriHandler = LocalUriHandler.current
 
     Box(
         modifier = Modifier
@@ -889,7 +1170,19 @@ private fun AddonInfoOverlay(
                 )
             }
             info.repositoryUrl?.let { url ->
-                InfoLine("REPOSITORY", url)
+                Text(
+                    text = "REPOSITORY · $url",
+                    color = AddonsLink,
+                    fontFamily =
+                        KsenaxFontFamily.STANDALONE_DEPARTURE_MONO,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.clickable {
+                        runCatching {
+                            uriHandler.openUri(url)
+                        }
+                    },
+                )
             }
             Text(
                 text = "Нажмите в любую точку, чтобы закрыть",

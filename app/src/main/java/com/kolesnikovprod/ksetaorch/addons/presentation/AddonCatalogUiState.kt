@@ -10,6 +10,7 @@ import dev.openksenax.addons.contract.AddonId
 internal data class AddonCatalogUiState(
     val cards: List<AddonCardUiModel> = emptyList(),
     val selectedAddonId: AddonId? = null,
+    val pendingInstallConfirmationId: AddonId? = null,
     val isRefreshing: Boolean = false,
     val actionMessage: String? = null,
     val infoOverlay: AddonInfoUiModel? = null,

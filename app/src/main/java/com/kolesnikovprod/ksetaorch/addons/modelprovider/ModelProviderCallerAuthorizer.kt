@@ -98,8 +98,8 @@ internal class ModelProviderCallerAuthorizer(
 
     fun enforceAuthorizedCaller(callingUid: Int) {
         val state = registry.authorizationState()
-        check(state.isInitialized) {
-            "Addon registry is not ready"
+        if (!state.isInitialized) {
+            throw SecurityException("Addon registry is not ready")
         }
 
         val callerPackages = packagesForUid(callingUid)
@@ -121,8 +121,8 @@ internal class ModelProviderCallerAuthorizer(
         callingUid: Int,
     ): Set<HostCapabilityId> {
         val state = registry.authorizationState()
-        check(state.isInitialized) {
-            "Addon registry is not ready"
+        if (!state.isInitialized) {
+            throw SecurityException("Addon registry is not ready")
         }
 
         val callerPackages = packagesForUid(callingUid)

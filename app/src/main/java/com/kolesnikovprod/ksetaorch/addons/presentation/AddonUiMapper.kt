@@ -6,7 +6,6 @@ import com.kolesnikovprod.ksetaorch.addons.registry.AddonInstallationState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonTrustState
 import com.kolesnikovprod.ksetaorch.addons.registry.RegisteredAddon
-import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallProgress
 
 /**
  * Единственное преобразование registry domain в текстовое UI-состояние.
@@ -18,8 +17,9 @@ internal object AddonUiMapper {
     fun map(
         registryState: AddonRegistryState,
         selectedAddonId: AddonId?,
+        pendingInstallConfirmationId: AddonId? = null,
         actionMessage: String?,
-        installProgress: Map<AddonId, AddonInstallProgress> = emptyMap(),
+        installStates: Map<AddonId, AddonInstallUiState> = emptyMap(),
         bannerStates: Map<AddonId, AddonBannerUiState> = emptyMap(),
         checkingUpdateIds: Set<AddonId> = emptySet(),
         updateMessages: Map<AddonId, String> = emptyMap(),
@@ -34,7 +34,11 @@ internal object AddonUiMapper {
                 }
                 .map { addon ->
                     addon.toCard(
-                        progress = installProgress[addon.addonId],
+                        installState = installStates[addon.addonId]
+                            ?: AddonInstallUiState.Idle,
+                        isInstallConfirmationVisible =
+                            addon.addonId ==
+                                pendingInstallConfirmationId,
                         bannerState = bannerStates[addon.addonId],
                         isCheckingUpdate =
                             addon.addonId in checkingUpdateIds,
@@ -42,6 +46,8 @@ internal object AddonUiMapper {
                     )
                 },
             selectedAddonId = selectedAddonId,
+            pendingInstallConfirmationId =
+                pendingInstallConfirmationId,
             isRefreshing = registryState.isRefreshing,
             actionMessage = actionMessage,
             infoOverlay = infoOverlay,
@@ -49,7 +55,8 @@ internal object AddonUiMapper {
     }
 
     private fun RegisteredAddon.toCard(
-        progress: AddonInstallProgress?,
+        installState: AddonInstallUiState,
+        isInstallConfirmationVisible: Boolean,
         bannerState: AddonBannerUiState?,
         isCheckingUpdate: Boolean,
         updateMessage: String?,
@@ -87,18 +94,12 @@ internal object AddonUiMapper {
                             installation is
                             AddonInstallationState.UpdateAvailable
                     ) &&
-                    progress == null,
+                    installState is AddonInstallUiState.Idle,
             canManageRuntime = canBeManaged,
             canUninstall = isInstalled,
-            installStage = progress?.stage,
-            installProgress = progress?.fraction,
-            installBytesPerSecond = progress?.bytesPerSecond,
-            isWeakConnection =
-                progress?.bytesPerSecond
-                    ?.let { speed ->
-                        speed < WEAK_CONNECTION_BYTES_PER_SECOND
-                    }
-                    ?: false,
+            installState = installState,
+            isInstallConfirmationVisible =
+                isInstallConfirmationVisible,
             isCheckingUpdate = isCheckingUpdate,
             updateMessage = updateMessage,
             banner = bannerState
@@ -139,6 +140,4 @@ internal object AddonUiMapper {
             "Несовместим: ${reasons.size} проверок не пройдено"
     }
 
-    private const val WEAK_CONNECTION_BYTES_PER_SECOND =
-        256L * 1024L
 }

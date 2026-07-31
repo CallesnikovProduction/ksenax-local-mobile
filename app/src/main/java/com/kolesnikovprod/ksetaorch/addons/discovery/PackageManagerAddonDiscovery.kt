@@ -144,10 +144,8 @@ class PackageManagerAddonDiscovery(
                         ),
                 )
 
-            val addonId = AddonId(
-                metadata.requireString(
-                    AddonManifestContract.META_ADDON_ID,
-                ),
+            val addonId = metadata.requireAddonId(
+                AddonManifestContract.META_ADDON_ID,
             )
 
             val protocolVersion =
@@ -347,6 +345,20 @@ class PackageManagerAddonDiscovery(
         }
 
         return value
+    }
+
+    private fun Bundle.requireAddonId(key: String): AddonId {
+        val rawValue = requireString(key)
+        return try {
+            AddonId(rawValue)
+        } catch (_: IllegalArgumentException) {
+            reject(
+                AddonDiscoveryRejectionReason.InvalidMetadata(
+                    key = key,
+                    value = rawValue,
+                ),
+            )
+        }
     }
 
     private fun Bundle.requireExecutionModel(key: String): AddonExecutionModel {
