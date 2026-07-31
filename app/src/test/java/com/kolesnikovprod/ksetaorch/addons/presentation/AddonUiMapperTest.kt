@@ -107,6 +107,50 @@ class AddonUiMapperTest {
             card.capabilityLabels,
         )
 
+        val available = registered.copy(
+            installedMetadata = null,
+            managementEndpoint = null,
+            installation = AddonInstallationState.NotInstalled,
+            trust = AddonTrustState.NotInstalled,
+            grantedHostCapabilities = emptySet(),
+            managementBlockReason =
+                AddonManagementBlockReason.ADDON_NOT_INSTALLED,
+        )
+        val confirmationState = AddonUiMapper.map(
+            registryState = AddonRegistryState(
+                addons = listOf(available),
+                catalogStatus = AddonRegistrySourceStatus.Fresh,
+                discoveryStatus = AddonRegistrySourceStatus.Fresh,
+                isInitialized = true,
+            ),
+            selectedAddonId = null,
+            pendingInstallConfirmationId = addonId,
+            actionMessage = null,
+        )
+        assertTrue(
+            confirmationState.cards.single()
+                .isInstallConfirmationVisible,
+        )
+        assertTrue(confirmationState.cards.single().canInstall)
+
+        val failedState = AddonUiMapper.map(
+            registryState = AddonRegistryState(
+                addons = listOf(available),
+                catalogStatus = AddonRegistrySourceStatus.Fresh,
+                discoveryStatus = AddonRegistrySourceStatus.Fresh,
+                isInitialized = true,
+            ),
+            selectedAddonId = null,
+            actionMessage = null,
+            installStates = mapOf(
+                addonId to AddonInstallUiState.Failed(
+                    AddonInstallFailureUiReason.NO_INTERNET,
+                ),
+            ),
+        )
+        assertFalse(failedState.cards.single().canInstall)
+        assertTrue(failedState.cards.single().hasInstallFailure)
+
         val managementBlockedState = AddonUiMapper.map(
             registryState = AddonRegistryState(
                 addons = listOf(

@@ -80,13 +80,16 @@ internal class DefaultAddonCatalogMapper :
                                 entry.presentation.repositoryUrl,
                             banner = entry.presentation.bannerUrl
                                 ?.let { bannerUrl ->
-                                    AddonBannerDescriptor(
-                                        url = bannerUrl,
-                                        sha256 = requireNotNull(
-                                            entry.presentation
-                                                .bannerSha256,
-                                        ).uppercase(Locale.ROOT),
-                                    )
+                                    entry.presentation.bannerSha256
+                                        ?.let { bannerSha256 ->
+                                            AddonBannerDescriptor(
+                                                url = bannerUrl,
+                                                sha256 =
+                                                    bannerSha256.uppercase(
+                                                        Locale.ROOT,
+                                                    ),
+                                            )
+                                        }
                                 },
                         ),
                     security =

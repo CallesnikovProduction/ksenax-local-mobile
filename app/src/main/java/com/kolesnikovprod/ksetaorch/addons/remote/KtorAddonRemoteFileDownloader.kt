@@ -1,6 +1,8 @@
 package com.kolesnikovprod.ksetaorch.addons.remote
 
 import io.ktor.client.HttpClient
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
@@ -13,6 +15,10 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URI
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.nio.channels.UnresolvedAddressException
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -125,7 +131,11 @@ internal class KtorAddonRemoteFileDownloader(
         } catch (error: Exception) {
             partial.delete()
             AddonRemoteFileResult.Failed(
-                reason = AddonRemoteFileFailure.TRANSFER_FAILED,
+                reason = if (error.isNetworkUnavailable()) {
+                    AddonRemoteFileFailure.NETWORK_UNAVAILABLE
+                } else {
+                    AddonRemoteFileFailure.TRANSFER_FAILED
+                },
                 message = error.message,
             )
         }
@@ -269,7 +279,37 @@ internal sealed interface AddonRemoteFileResult {
 internal enum class AddonRemoteFileFailure {
     UNSAFE_URL,
     SIZE_MISMATCH,
+    NETWORK_UNAVAILABLE,
     TRANSFER_FAILED,
+}
+
+/**
+ * Проверяет только типизированные transport-причины отсутствия соединения.
+ *
+ * HTTP status, redirect policy, file IO и semantic verification намеренно
+ * не считаются отсутствием Интернета.
+ *
+ * @since 0.3
+ */
+internal fun Throwable.isNetworkUnavailable(): Boolean {
+    val visited = mutableSetOf<Throwable>()
+    var current: Throwable? = this
+
+    while (current != null && visited.add(current)) {
+        if (
+            current is UnknownHostException ||
+            current is SocketException ||
+            current is SocketTimeoutException ||
+            current is UnresolvedAddressException ||
+            current is ConnectTimeoutException ||
+            current is HttpRequestTimeoutException
+        ) {
+            return true
+        }
+        current = current.cause
+    }
+
+    return false
 }
 
 /**

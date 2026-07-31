@@ -1,8 +1,8 @@
 package com.kolesnikovprod.ksetaorch.addons.presentation
 
 import android.graphics.Bitmap
+import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallProgress
 import dev.openksenax.addons.contract.AddonId
-import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallStage
 
 /**
  * Готовая к отображению карточка зарегистрированного аддона.
@@ -27,16 +27,62 @@ internal data class AddonCardUiModel(
     val canInstall: Boolean,
     val canManageRuntime: Boolean,
     val canUninstall: Boolean,
-    val installStage: AddonInstallStage? = null,
-    val installProgress: Float? = null,
-    val installBytesPerSecond: Long? = null,
-    val isWeakConnection: Boolean = false,
+    val installState: AddonInstallUiState =
+        AddonInstallUiState.Idle,
+    val isInstallConfirmationVisible: Boolean = false,
     val isCheckingUpdate: Boolean = false,
     val updateMessage: String? = null,
     val banner: AddonBannerUiState,
 ) {
     val isInstallInProgress: Boolean
-        get() = installStage != null
+        get() = installState is AddonInstallUiState.Active
+
+    val hasInstallFailure: Boolean
+        get() = installState is AddonInstallUiState.Failed
+}
+
+/**
+ * Presentation-состояние одной попытки установки.
+ *
+ * Download-domain публикует фактические байты и стадии, а этот тип добавляет
+ * только UX-проекцию качества соединения и устойчивый отказ, который
+ * пользователь явно сбрасывает через REFRESH.
+ *
+ * @since 0.3
+ */
+internal sealed interface AddonInstallUiState {
+
+    data object Idle : AddonInstallUiState
+
+    data class Active(
+        val progress: AddonInstallProgress,
+        val connectionQuality: AddonInstallConnectionQuality =
+            AddonInstallConnectionQuality.NORMAL,
+    ) : AddonInstallUiState
+
+    data class Failed(
+        val reason: AddonInstallFailureUiReason,
+    ) : AddonInstallUiState
+}
+
+/**
+ * Визуальная оценка соединения активной APK-загрузки.
+ *
+ * @since 0.3
+ */
+internal enum class AddonInstallConnectionQuality {
+    NORMAL,
+    WEAK,
+}
+
+/**
+ * Устойчивые причины отказа, для которых карточка показывает собственный
+ * recovery UX вместо глобального сообщения.
+ *
+ * @since 0.3
+ */
+internal enum class AddonInstallFailureUiReason {
+    NO_INTERNET,
 }
 
 /**

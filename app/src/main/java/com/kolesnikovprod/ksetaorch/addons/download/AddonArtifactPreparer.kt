@@ -109,6 +109,7 @@ internal sealed interface AddonArtifactPreparationResult {
  */
 internal enum class AddonArtifactFailure {
     UNSAFE_DOWNLOAD_URL,
+    NETWORK_UNAVAILABLE,
     DOWNLOAD_FAILED,
     FILE_SIZE_MISMATCH,
     SHA256_MISMATCH,

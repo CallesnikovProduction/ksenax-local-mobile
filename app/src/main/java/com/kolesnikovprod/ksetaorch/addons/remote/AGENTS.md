@@ -10,6 +10,11 @@ addon-платформы. Он проверяет HTTPS/redirect policy, огр�
 identity, bitmap dimensions и остальные семантические проверки выполняются
 владельцем конкретного артефакта.
 
+Отсутствие соединения возвращается отдельным
+`AddonRemoteFileFailure.NETWORK_UNAVAILABLE`. HTTP-ошибка, небезопасный
+redirect, ошибка локального файла и semantic verification не должны
+маскироваться под offline-состояние.
+
 Нельзя добавлять второй самостоятельный Ktor downloader для нового типа
 addon-ресурса. Новый потребитель должен использовать
 `KtorAddonRemoteFileDownloader` и наложить собственный verifier.
