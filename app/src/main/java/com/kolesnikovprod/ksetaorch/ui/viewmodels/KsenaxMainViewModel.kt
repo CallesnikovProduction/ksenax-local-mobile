@@ -430,13 +430,28 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun onSettingsThemeApplied(themeId: KsenaxThemeId) {
+    fun onSettingsThemeApplied(
+        themeId: KsenaxThemeId,
+        themeBackgroundSaturation: Float,
+    ) {
+        val normalizedSaturation = themeBackgroundSaturation.coerceIn(0f, 1f)
         val currentSettings = uiState.settingsUiState
-        val savedSnapshot = currentSettings.savedSnapshot.copy(themeId = themeId)
-        val draftSnapshot = currentSettings.draftSnapshot.copy(themeId = themeId)
+        val savedSnapshot = currentSettings.savedSnapshot.copy(
+            themeId = themeId,
+            themeBackgroundSaturation = normalizedSaturation,
+        )
+        val draftSnapshot = currentSettings.draftSnapshot.copy(
+            themeId = themeId,
+            themeBackgroundSaturation = normalizedSaturation,
+        )
 
         settingsPreferences.edit()
             .putString(THEME_ID_KEY, themeId.name)
+            .putFloat(
+                THEME_BACKGROUND_SATURATION_KEY,
+                normalizedSaturation,
+            )
+            .remove(THEME_BACKGROUND_COLOR_ENABLED_KEY)
             .apply()
 
         uiState = uiState.copy(
@@ -1115,6 +1130,27 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
             ?: KsenaxThemeId.MoonValley
+        val themeBackgroundSaturation = when {
+            settingsPreferences.contains(
+                THEME_BACKGROUND_SATURATION_KEY,
+            ) -> settingsPreferences.getFloat(
+                THEME_BACKGROUND_SATURATION_KEY,
+                1f,
+            )
+            settingsPreferences.contains(
+                THEME_BACKGROUND_COLOR_ENABLED_KEY,
+            ) -> if (
+                settingsPreferences.getBoolean(
+                    THEME_BACKGROUND_COLOR_ENABLED_KEY,
+                    true,
+                )
+            ) {
+                1f
+            } else {
+                0f
+            }
+            else -> 1f
+        }.coerceIn(0f, 1f)
 
         return KsenaxAppSettingsSnapshot(
             transcribingModel = readSavedTranscribingModel(),
@@ -1122,6 +1158,7 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
             contextWindow = contextWindow,
             launchAnimationEnabled = launchAnimationEnabled,
             themeId = themeId,
+            themeBackgroundSaturation = themeBackgroundSaturation,
         )
     }
 
@@ -1133,6 +1170,11 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
                 snapshot.launchAnimationEnabled,
             )
             .putString(THEME_ID_KEY, snapshot.themeId.name)
+            .putFloat(
+                THEME_BACKGROUND_SATURATION_KEY,
+                snapshot.themeBackgroundSaturation.coerceIn(0f, 1f),
+            )
+            .remove(THEME_BACKGROUND_COLOR_ENABLED_KEY)
             .apply()
 
         modelPreferences.edit().apply {
@@ -1237,6 +1279,10 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
         const val CONTEXT_WINDOW_KEY = "context_window"
         const val LAUNCH_ANIMATION_ENABLED_KEY = "launch_animation_enabled"
         const val THEME_ID_KEY = "theme_id"
+        const val THEME_BACKGROUND_SATURATION_KEY =
+            "theme_background_saturation"
+        const val THEME_BACKGROUND_COLOR_ENABLED_KEY =
+            "theme_background_color_enabled"
         const val LEGACY_LAUNCH_ANIMATION_ENABLED_KEY = "launch_animation_enabled"
         const val CHAT_TITLE_MAX_LENGTH = 80
     }

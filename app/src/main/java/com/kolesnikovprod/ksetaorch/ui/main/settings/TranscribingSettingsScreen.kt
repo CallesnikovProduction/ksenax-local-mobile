@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.ui.components.GradientIcon
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxBackArrowButton
 import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
-import com.kolesnikovprod.ksetaorch.ui.components.PixelSquareFrame
 import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
 import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 import com.kolesnikovprod.ksetaorch.ui.theme.design.KsenaxFontFamily
@@ -136,60 +136,12 @@ internal fun PixelBackButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    KsenaxPressableBox(
+    KsenaxBackArrowButton(
+        brush = brush,
         onClick = onClick,
-        modifier = modifier
-            .size(40.dp),
-        contentAlignment = Alignment.Center,
-    ) { pressed ->
-        val pressedBrush = brush.whileKsenaxPressed(pressed)
-
-        PixelSquareFrame(
-            brush = pressedBrush,
-            modifier = Modifier.matchParentSize(),
-        )
-
-        PixelBackGlyph(
-            brush = pressedBrush,
-            modifier = Modifier.size(width = 19.dp, height = 23.dp),
-        )
-    }
-}
-
-@Composable
-private fun PixelBackGlyph(
-    brush: Brush,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier = modifier) {
-        val pixel = 3.dp.toPx()
-        val centerY = size.height / 2f - pixel / 2f
-        val leftX = (size.width - pixel * 6f) / 2f
-
-        val arrowPixels = listOf(
-            0 to 2,
-            1 to 1,
-            1 to 2,
-            1 to 3,
-            2 to 0,
-            2 to 2,
-            2 to 4,
-            3 to 2,
-            4 to 2,
-            5 to 2,
-        )
-
-        arrowPixels.forEach { (x, y) ->
-            drawRect(
-                brush = brush,
-                topLeft = Offset(
-                    x = leftX + x * pixel,
-                    y = centerY + (y - 2) * pixel,
-                ),
-                size = Size(pixel, pixel),
-            )
-        }
-    }
+        pointsLeft = true,
+        modifier = modifier.size(40.dp),
+    )
 }
 
 @Composable

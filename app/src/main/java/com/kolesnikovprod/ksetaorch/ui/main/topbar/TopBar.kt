@@ -52,12 +52,24 @@ fun PixelTopBar(
             modifier = Modifier.align(Alignment.TopStart),
         )
 
-        if (activeChatMode == null) {
+        AnimatedVisibility(
+            visible = activeChatMode == null && !isSidePanelOpen,
+            enter = fadeIn(animationSpec = tween(durationMillis = 160)) +
+                    scaleIn(
+                        initialScale = 0.96f,
+                        animationSpec = tween(durationMillis = 160),
+                    ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 130)) +
+                    scaleOut(
+                        targetScale = 0.96f,
+                        animationSpec = tween(durationMillis = 130),
+                    ),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
             PixelChatModeSelect(
                 theme = theme,
                 selectedMode = selectedMode,
                 onModeSelected = onModeSelected,
-                modifier = Modifier.align(Alignment.TopEnd),
             )
         }
 
