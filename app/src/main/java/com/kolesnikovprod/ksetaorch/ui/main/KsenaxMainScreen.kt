@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.positionChange
@@ -52,6 +53,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import com.kolesnikovprod.ksetaorch.R
 import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogEffect
 import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogScreen
@@ -73,6 +75,7 @@ import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxDownloadOverlayHost
 import com.kolesnikovprod.ksetaorch.ui.main.overlays.KsenaxProductInfoOverlay
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSettingsPage
 import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.KsenaxSidePanel
+import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.KsenaxRightPanelHandle
 import com.kolesnikovprod.ksetaorch.ui.main.sidepanel.rememberKsenaxSidePanelRevealState
 import com.kolesnikovprod.ksetaorch.ui.main.topbar.PixelTopBar
 import com.kolesnikovprod.ksetaorch.ui.theme.visuals
@@ -386,26 +389,11 @@ fun KsenaxMainScreen(
                 addonsScreenWidthPx.floatValue =
                     size.width.toFloat().coerceAtLeast(1f)
             }
-            .dragMainPanelsHorizontally(
-                enabled = !sidePanelState.isOpen && !isAddonsPanelOpen,
-                addonOpeningEnabled = activeChat == null,
-                onAddonDragStarted = {
-                    addonsPanelSettleJob?.cancel()
-                },
-                onAddonDragDelta = { dragDeltaX ->
-                    addonsPanelRevealProgress = (
-                        addonsPanelRevealProgress -
-                            dragDeltaX / addonsScreenWidthPx.floatValue
-                    ).coerceIn(0f, 1f)
-                },
-                onAddonDragFinished = {
-                    settleAddonsPanel(
-                        open = addonsPanelRevealProgress >= 0.28f,
-                    )
-                },
-                onAddonDragCancelled = {
-                    settleAddonsPanel(open = false)
-                },
+            .dragMainSidePanelHorizontally(
+                enabled =
+                    !sidePanelState.isOpen &&
+                    addonsPanelRevealProgress <= 0f,
+                rightGestureExclusionWidthPx = addonsPanelEdgeWidthPx,
                 onSidePanelDragStarted = sidePanelState::onDragStarted,
                 onSidePanelDragDelta = { dragDeltaX ->
                     sidePanelState.onDragDelta(
@@ -600,6 +588,39 @@ fun KsenaxMainScreen(
             },
         )
 
+        AnimatedVisibility(
+            visible =
+                activeChat == null &&
+                sidePanelState.revealProgress <= 0f,
+            enter = fadeIn(animationSpec = tween(durationMillis = 160)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 130)),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            KsenaxRightPanelHandle(
+                brush = theme.controlsBrush,
+                revealProgress = addonsPanelRevealProgress,
+                screenWidthPx = addonsScreenWidthPx.floatValue,
+                gestureEnabled = !isAddonsPanelOpen,
+                onClick = {
+                    settleAddonsPanel(open = true)
+                },
+                onDragStarted = {
+                    addonsPanelSettleJob?.cancel()
+                },
+                onDragDelta = { dragDeltaX ->
+                    addonsPanelRevealProgress = (
+                        addonsPanelRevealProgress -
+                            dragDeltaX / addonsScreenWidthPx.floatValue
+                    ).coerceIn(0f, 1f)
+                },
+                onDragFinished = {
+                    settleAddonsPanel(
+                        open = addonsPanelRevealProgress >= 0.5f,
+                    )
+                },
+            )
+        }
+
         AddonCatalogScreen(
             state = addonCatalogUiState,
             theme = theme,
@@ -613,6 +634,8 @@ fun KsenaxMainScreen(
             onCloseManagement = addonCatalogViewModel::closeManagement,
             onOpenAddon = addonCatalogViewModel::openAddon,
             onInstallAddon = addonCatalogViewModel::install,
+            onDismissInstallConfirmation =
+                addonCatalogViewModel::dismissInstallConfirmation,
             onShowInfo = addonCatalogViewModel::showInfo,
             onCheckForUpdates =
                 addonCatalogViewModel::checkForUpdates,
@@ -684,22 +707,16 @@ fun KsenaxMainScreen(
 }
 
 /**
- * Единожды распределяет горизонтальный жест главного экрана между панелями.
+ * Открывает левую панель движением пальца вправо из основной области.
  *
- * Свайп вправо синхронно раскрывает левую панель, движение влево — экран
- * аддонов. Оба жеста могут начинаться из центральной области экрана. Detector
- * принимает поток только после горизонтального touch-slop, поэтому не ломает
- * вертикальную прокрутку.
+ * Правую панель эта область намеренно не открывает: её drag принадлежит
+ * исключительно видимому правому хлястику.
  *
  * @since 0.3
  */
-internal fun Modifier.dragMainPanelsHorizontally(
+internal fun Modifier.dragMainSidePanelHorizontally(
     enabled: Boolean,
-    addonOpeningEnabled: Boolean,
-    onAddonDragStarted: () -> Unit,
-    onAddonDragDelta: (Float) -> Unit,
-    onAddonDragFinished: () -> Unit,
-    onAddonDragCancelled: () -> Unit,
+    rightGestureExclusionWidthPx: Float,
     onSidePanelDragStarted: () -> Unit,
     onSidePanelDragDelta: (Float) -> Unit,
     onSidePanelDragFinished: () -> Unit,
@@ -707,42 +724,29 @@ internal fun Modifier.dragMainPanelsHorizontally(
 ): Modifier {
     if (!enabled) return this
 
-    return pointerInput(
-        enabled,
-        addonOpeningEnabled,
-    ) {
+    return pointerInput(enabled) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
-            var target: MainPanelDragTarget? = null
+            if (
+                down.position.x >=
+                size.width - rightGestureExclusionWidthPx
+            ) {
+                return@awaitEachGesture
+            }
+            var accepted = false
 
             val dragStart = awaitHorizontalTouchSlopOrCancellation(
                 pointerId = down.id,
             ) { change, overSlop ->
-                target = when {
-                    addonOpeningEnabled && overSlop < 0f ->
-                        MainPanelDragTarget.ADDONS
-                    overSlop > 0f ->
-                        MainPanelDragTarget.SIDE_PANEL
-                    else -> null
-                }
-
-                when (target) {
-                    MainPanelDragTarget.ADDONS -> {
-                        change.consume()
-                        onAddonDragStarted()
-                        onAddonDragDelta(overSlop)
-                    }
-                    MainPanelDragTarget.SIDE_PANEL -> {
-                        change.consume()
-                        onSidePanelDragStarted()
-                        onSidePanelDragDelta(overSlop)
-                    }
-                    null -> Unit
+                if (overSlop > 0f) {
+                    accepted = true
+                    change.consume()
+                    onSidePanelDragStarted()
+                    onSidePanelDragDelta(overSlop)
                 }
             }
 
-            val acceptedTarget = target
-            if (dragStart == null || acceptedTarget == null) {
+            if (dragStart == null || !accepted) {
                 return@awaitEachGesture
             }
 
@@ -751,37 +755,16 @@ internal fun Modifier.dragMainPanelsHorizontally(
                 if (dragAmount == 0f) return@horizontalDrag
 
                 change.consume()
-                when (acceptedTarget) {
-                    MainPanelDragTarget.ADDONS ->
-                        onAddonDragDelta(dragAmount)
-                    MainPanelDragTarget.SIDE_PANEL ->
-                        onSidePanelDragDelta(dragAmount)
-                }
+                onSidePanelDragDelta(dragAmount)
             }
 
-            when (acceptedTarget) {
-                MainPanelDragTarget.ADDONS -> {
-                    if (completed) {
-                        onAddonDragFinished()
-                    } else {
-                        onAddonDragCancelled()
-                    }
-                }
-                MainPanelDragTarget.SIDE_PANEL -> {
-                    if (completed) {
-                        onSidePanelDragFinished()
-                    } else {
-                        onSidePanelDragCancelled()
-                    }
-                }
+            if (completed) {
+                onSidePanelDragFinished()
+            } else {
+                onSidePanelDragCancelled()
             }
         }
     }
-}
-
-private enum class MainPanelDragTarget {
-    ADDONS,
-    SIDE_PANEL,
 }
 
 /**
