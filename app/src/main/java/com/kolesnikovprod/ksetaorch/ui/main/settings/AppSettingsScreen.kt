@@ -63,6 +63,8 @@ fun AppSettingsScreen(
         KsenaxMainBackground(
             theme = theme,
             showScenicOverlay = false,
+            themeBackgroundSaturation =
+                state.savedSnapshot.themeBackgroundSaturation,
             modifier = Modifier.fillMaxSize(),
         )
 

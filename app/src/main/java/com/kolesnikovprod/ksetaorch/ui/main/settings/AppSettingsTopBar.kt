@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.kolesnikovprod.ksetaorch.ui.components.KsenaxBackArrowButton
 import com.kolesnikovprod.ksetaorch.ui.components.PixelSquareFrame
 import com.kolesnikovprod.ksetaorch.ui.components.KsenaxPressableBox
 import com.kolesnikovprod.ksetaorch.ui.components.whileKsenaxPressed
@@ -71,16 +72,14 @@ internal fun AppSettingsTopBar(
     Box(
         modifier = modifier.height(68.dp),
     ) {
-        SettingsTopBarButton(
+        KsenaxBackArrowButton(
             brush = theme.controlsBrush,
             onClick = onBackClick,
-            modifier = Modifier.align(Alignment.CenterStart),
-        ) { pressed ->
-            PixelBackArrow(
-                brush = theme.controlsBrush.whileKsenaxPressed(pressed),
-                modifier = Modifier.size(23.dp),
-            )
-        }
+            pointsLeft = true,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .size(46.dp),
+        )
 
         SettingsTopBarButton(
             brush = if (hasUnsavedChanges) {
@@ -127,34 +126,6 @@ private fun SettingsTopBarButton(
             backgroundColor = Color(0xD9050810),
         )
         content(pressed)
-    }
-}
-
-@Composable
-private fun PixelBackArrow(
-    brush: Brush,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier = modifier) {
-        val pixel = size.minDimension / 7f
-        val points = listOf(
-            1 to 3,
-            2 to 2,
-            2 to 3,
-            2 to 4,
-            3 to 1,
-            3 to 3,
-            3 to 5,
-            4 to 3,
-            5 to 3,
-        )
-        points.forEach { (x, y) ->
-            drawRect(
-                brush = brush,
-                topLeft = Offset(x * pixel, y * pixel),
-                size = Size(pixel, pixel),
-            )
-        }
     }
 }
 

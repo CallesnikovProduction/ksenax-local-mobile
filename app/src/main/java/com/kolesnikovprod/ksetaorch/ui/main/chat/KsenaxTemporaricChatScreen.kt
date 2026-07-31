@@ -147,6 +147,9 @@ fun KsenaxTemporaricChatScreen(
         KsenaxMainBackground(
             theme = theme,
             showScenicOverlay = uiState.activeChat == null,
+            themeBackgroundSaturation =
+                mainUiState.settingsUiState.savedSnapshot
+                    .themeBackgroundSaturation,
             modifier = Modifier.fillMaxSize(),
         )
 

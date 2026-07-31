@@ -2,6 +2,8 @@ package com.kolesnikovprod.ksetaorch.ui.main.settings
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,8 +36,13 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,12 +62,14 @@ import com.kolesnikovprod.ksetaorch.ui.theme.design.THEME_SWITCHER_RADIO_INACTIV
 import com.kolesnikovprod.ksetaorch.ui.theme.design.THEME_SWITCHER_SCRIM_COLOUR
 import com.kolesnikovprod.ksetaorch.ui.theme.design.THEME_SWITCHER_SURFACE_COLOUR
 import com.kolesnikovprod.ksetaorch.ui.theme.visuals
+import kotlin.math.roundToInt
 
 @Composable
 fun ThemeSwitcherScreen(
     currentThemeId: KsenaxThemeId,
+    currentThemeBackgroundSaturation: Float,
     onBackClick: () -> Unit,
-    onApplyTheme: (KsenaxThemeId) -> Unit,
+    onApplyTheme: (KsenaxThemeId, Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pendingThemeName by rememberSaveable(currentThemeId) {
@@ -70,6 +79,11 @@ fun ThemeSwitcherScreen(
         theme.name == pendingThemeName
     } ?: currentThemeId
     val pendingTheme = pendingThemeId.visuals
+    var pendingThemeBackgroundSaturation by rememberSaveable(
+        currentThemeBackgroundSaturation,
+    ) {
+        mutableStateOf(currentThemeBackgroundSaturation.coerceIn(0f, 1f))
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -77,6 +91,7 @@ fun ThemeSwitcherScreen(
         KsenaxMainBackground(
             theme = pendingTheme,
             showScenicOverlay = false,
+            themeBackgroundSaturation = pendingThemeBackgroundSaturation,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -106,7 +121,9 @@ fun ThemeSwitcherScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(
@@ -121,7 +138,18 @@ fun ThemeSwitcherScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            ThemeBackgroundSaturationControl(
+                theme = pendingTheme,
+                saturation = pendingThemeBackgroundSaturation,
+                onSaturationChange = { saturation ->
+                    pendingThemeBackgroundSaturation = saturation
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -129,14 +157,20 @@ fun ThemeSwitcherScreen(
             ) {
                 ThemeActionButton(
                     text = "ОТМЕНА",
-                    brush = pendingTheme.inactiveBrush,
+                    brush = pendingTheme.controlsBrush,
                     onClick = onBackClick,
                     modifier = Modifier.weight(1f),
                 )
                 ThemeActionButton(
                     text = "ПРИМЕНИТЬ",
                     brush = pendingTheme.selectedBrush,
-                    onClick = { onApplyTheme(pendingThemeId) },
+                    filled = true,
+                    onClick = {
+                        onApplyTheme(
+                            pendingThemeId,
+                            pendingThemeBackgroundSaturation,
+                        )
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -201,7 +235,7 @@ private fun CurrentThemeStatus(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier.height(52.dp),
+        modifier = modifier.height(48.dp),
     ) {
         PixelWideFrame(
             brush = theme.inactiveBrush,
@@ -251,8 +285,8 @@ private fun SelectedThemeBadge(
 ) {
     Box(
         modifier = modifier
-            .width(88.dp)
-            .height(28.dp),
+            .width(94.dp)
+            .height(22.dp),
         contentAlignment = Alignment.Center,
     ) {
         ThemePixelRoundedFrame(
@@ -262,10 +296,11 @@ private fun SelectedThemeBadge(
             modifier = Modifier.matchParentSize(),
         )
         Text(
-            text = "◉ ВЫБРАНО",
+            text = "✓ ВЫБРАНО",
             color = theme.accentColor,
             fontFamily = KsenaxFontFamily.TITLES_COMIC_SANS_PIXEL,
-            fontSize = 7.sp,
+            fontSize = 9.sp,
+            lineHeight = 10.sp,
         )
     }
 }
@@ -403,12 +438,205 @@ private fun PixelThemeRadio(
             )
         }
         if (isSelected) {
-            drawRect(
-                color = selectedColor,
-                topLeft = Offset(3 * pixel, 3 * pixel),
-                size = Size(3 * pixel, 3 * pixel),
+            val checkPoints = listOf(
+                2 to 4,
+                3 to 5,
+                4 to 4,
+                5 to 3,
+                6 to 2,
             )
+            checkPoints.forEach { (x, y) ->
+                drawRect(
+                    color = selectedColor,
+                    topLeft = Offset(x * pixel, y * pixel),
+                    size = Size(pixel, pixel),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun ThemeBackgroundSaturationControl(
+    theme: KsenaxThemeVisuals,
+    saturation: Float,
+    onSaturationChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalizedSaturation = saturation.coerceIn(0f, 1f)
+
+    Box(
+        modifier = modifier.height(52.dp),
+    ) {
+        ThemePixelRoundedFrame(
+            brush = theme.controlsBrush,
+            backgroundColor = THEME_SWITCHER_SURFACE_COLOUR,
+            cornerSize = 9.dp,
+            modifier = Modifier.matchParentSize(),
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "КОНТРАСТНОСТЬ ФОНА",
+                    color = Color.White,
+                    fontFamily = KsenaxFontFamily.TITLES_COMIC_SANS_PIXEL,
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+
+                GradientText(
+                    text = "${(normalizedSaturation * 100f).roundToInt()}%",
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    brush = theme.selectedBrush,
+                    fontFamily = KsenaxFontFamily.TITLES_COMIC_SANS_PIXEL,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "0% · Ч/Б",
+                    color = theme.mutedColor,
+                    fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
+                    fontSize = 8.sp,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                ThemeSaturationSlider(
+                    theme = theme,
+                    value = normalizedSaturation,
+                    onValueChange = onSaturationChange,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(22.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "100%",
+                    color = theme.accentColor,
+                    fontFamily = KsenaxFontFamily.SETTINGS_MINECRAFT,
+                    fontSize = 8.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSaturationSlider(
+    theme: KsenaxThemeVisuals,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalizedValue = value.coerceIn(0f, 1f)
+    val updateFromPosition: (Float, Float) -> Unit = { x, width ->
+        if (width > 0f) {
+            val percent = ((x / width).coerceIn(0f, 1f) * 100f)
+                .roundToInt()
+            onValueChange(percent / 100f)
+        }
+    }
+
+    Canvas(
+        modifier = modifier
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = normalizedValue,
+                    range = 0f..1f,
+                    steps = 99,
+                )
+                setProgress { targetValue ->
+                    onValueChange(targetValue.coerceIn(0f, 1f))
+                    true
+                }
+            }
+            .pointerInput(onValueChange) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    updateFromPosition(
+                        down.position.x,
+                        size.width.toFloat(),
+                    )
+                    down.consume()
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { pointer ->
+                            pointer.id == down.id
+                        } ?: break
+
+                        if (!change.pressed) break
+
+                        updateFromPosition(
+                            change.position.x,
+                            size.width.toFloat(),
+                        )
+                        change.consume()
+                    }
+                }
+            },
+    ) {
+        val segmentCount = 24
+        val sidePadding = 4.dp.toPx()
+        val segmentGap = 2.dp.toPx()
+        val trackWidth = (size.width - sidePadding * 2f).coerceAtLeast(1f)
+        val segmentWidth = ((
+            trackWidth - segmentGap * (segmentCount - 1)
+        ) / segmentCount).coerceAtLeast(1f)
+        val segmentHeight = 5.dp.toPx()
+        val trackTop = (size.height - segmentHeight) / 2f
+        val activeSegments = (normalizedValue * segmentCount).roundToInt()
+
+        repeat(segmentCount) { index ->
+            val segmentLeft = sidePadding +
+                index * (segmentWidth + segmentGap)
+            if (index < activeSegments) {
+                drawRect(
+                    brush = theme.controlsBrush,
+                    topLeft = Offset(segmentLeft, trackTop),
+                    size = Size(segmentWidth, segmentHeight),
+                )
+            } else {
+                drawRect(
+                    color = theme.mutedColor.copy(alpha = 0.24f),
+                    topLeft = Offset(segmentLeft, trackTop),
+                    size = Size(segmentWidth, segmentHeight),
+                )
+            }
+        }
+
+        val knobPixel = 2.dp.toPx()
+        val knobCenterX = sidePadding + trackWidth * normalizedValue
+        drawRect(
+            brush = theme.selectedBrush,
+            topLeft = Offset(
+                knobCenterX - knobPixel,
+                size.height / 2f - knobPixel * 3f,
+            ),
+            size = Size(knobPixel * 2f, knobPixel * 6f),
+        )
+        drawRect(
+            brush = theme.selectedBrush,
+            topLeft = Offset(
+                knobCenterX - knobPixel * 2f,
+                size.height / 2f - knobPixel * 2f,
+            ),
+            size = Size(knobPixel * 4f, knobPixel * 4f),
+        )
     }
 }
 
@@ -418,6 +646,7 @@ private fun ThemeActionButton(
     brush: Brush,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    filled: Boolean = false,
 ) {
     KsenaxPressableBox(
         onClick = onClick,
@@ -430,16 +659,27 @@ private fun ThemeActionButton(
         ThemePixelRoundedFrame(
             brush = pressedBrush,
             backgroundColor = THEME_SWITCHER_SURFACE_COLOUR,
+            fillBrush = pressedBrush.takeIf { filled },
             cornerSize = 12.dp,
             modifier = Modifier.matchParentSize(),
         )
-        GradientText(
-            text = text,
-            fontSize = 15.sp,
-            lineHeight = 16.sp,
-            brush = pressedBrush,
-            fontFamily = KsenaxFontFamily.TITLES_COMIC_SANS_PIXEL,
-        )
+        if (filled) {
+            Text(
+                text = text,
+                color = Color.Black,
+                fontSize = 15.sp,
+                lineHeight = 16.sp,
+                fontFamily = KsenaxFontFamily.TITLES_COMIC_SANS_PIXEL,
+            )
+        } else {
+            GradientText(
+                text = text,
+                fontSize = 15.sp,
+                lineHeight = 16.sp,
+                brush = pressedBrush,
+                fontFamily = KsenaxFontFamily.TITLES_COMIC_SANS_PIXEL,
+            )
+        }
     }
 }
 
@@ -547,6 +787,7 @@ private fun ThemePixelRoundedFrame(
     cornerSize: Dp,
     modifier: Modifier = Modifier,
     backgroundColor: Color = THEME_SWITCHER_FRAME_BACKGROUND_COLOUR,
+    fillBrush: Brush? = null,
 ) {
     Canvas(modifier = modifier) {
         val step = (cornerSize.toPx() / 3f)
@@ -585,7 +826,11 @@ private fun ThemePixelRoundedFrame(
             close()
         }
 
-        drawPath(path = path, color = backgroundColor)
+        if (fillBrush != null) {
+            drawPath(path = path, brush = fillBrush)
+        } else {
+            drawPath(path = path, color = backgroundColor)
+        }
         drawPath(
             path = path,
             brush = brush,
