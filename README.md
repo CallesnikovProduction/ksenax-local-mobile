@@ -1,4 +1,4 @@
-![OpenKsenax Title Logo](assets\okx_v0.3_title_logo)
+![OpenKsenax Title Logo](assets/okx_v0.3_title_logo.png)
 
 <p align="center"> <img alt="Android" src="https://img.shields.io/badge/platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white"> <img alt="Kotlin" src="https://img.shields.io/badge/language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white"> <img alt="Jetpack Compose" src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white"> <img alt="Local First" src="https://img.shields.io/badge/architecture-local--first-black?style=for-the-badge"> <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge"> </p>
 
