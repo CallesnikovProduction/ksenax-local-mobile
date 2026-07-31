@@ -13,6 +13,8 @@ import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeId
  * По умолчанию — **4096 токенов**.
  * @property launchAnimationEnabled запускает приветственную анимацию глюка.
  * @property themeId единственная активная тема пользовательского интерфейса.
+ * @property themeBackgroundSaturation цветность фоновой и передней картинки
+ * выбранной темы в диапазоне `0f..1f`: от Ч/Б до исходных цветов.
  *
  * @author Stephan Kolesnikov
  * @since 0.2
@@ -24,6 +26,7 @@ data class KsenaxAppSettingsSnapshot(
     val contextWindow:          KsenaxContextWindow       = KsenaxContextWindow.Tokens4K,
     val launchAnimationEnabled: Boolean                   = true,
     val themeId:                KsenaxThemeId              = KsenaxThemeId.MoonValley,
+    val themeBackgroundSaturation: Float                  = 1f,
 )
 
 /**

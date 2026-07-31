@@ -276,6 +276,9 @@ fun KsenaxMainScreen(
         KsenaxMainBackground(
             theme = theme,
             showScenicOverlay = activeChat == null,
+            themeBackgroundSaturation =
+                uiState.settingsUiState.savedSnapshot
+                    .themeBackgroundSaturation,
             modifier = Modifier.fillMaxSize(),
         )
 

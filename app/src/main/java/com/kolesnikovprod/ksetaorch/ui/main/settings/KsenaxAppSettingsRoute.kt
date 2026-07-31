@@ -195,11 +195,21 @@ fun KsenaxAppSettingsRoute(
                 ThemeSwitcherScreen(
                     currentThemeId =
                         uiState.settingsUiState.savedSnapshot.themeId,
+                    currentThemeBackgroundSaturation =
+                        uiState.settingsUiState.savedSnapshot
+                            .themeBackgroundSaturation,
                     onBackClick = {
                         activePage = KsenaxSettingsPage.Main
                     },
-                    onApplyTheme = { themeId ->
-                        viewModel.onSettingsThemeApplied(themeId)
+                    onApplyTheme = {
+                            themeId,
+                            themeBackgroundSaturation,
+                        ->
+                        viewModel.onSettingsThemeApplied(
+                            themeId = themeId,
+                            themeBackgroundSaturation =
+                                themeBackgroundSaturation,
+                        )
                         activePage = KsenaxSettingsPage.Main
                     },
                     modifier = Modifier.fillMaxSize(),
