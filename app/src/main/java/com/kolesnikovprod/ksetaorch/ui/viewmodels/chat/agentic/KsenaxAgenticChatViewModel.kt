@@ -17,7 +17,6 @@ import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVe
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationStage
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelIntegrityVerifier
 import com.kolesnikovprod.ksetaorch.ui.main.model.toPresentationChat
-import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSupportedTextModel
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.KSENAX_MODEL_VERIFICATION_SUCCESS_HOLD_MILLIS
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelFailureStage
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelGateState
@@ -39,9 +38,25 @@ private const val ActiveChatIdStateKey = "agentic_chat_active_chat_id"
 /**
  * Presentation-контур реального агентного диалога.
  *
- * ViewModel хранит чат и шаги выполнения в Room, проверяет Gemma, собирает
- * coordinator для сохранённой SAF-директории либо default Documents-workspace
- * и управляет отменой turn-а.
+ * ViewModel хранит чат и шаги выполнения в Room, проверяет обязательные модели,
+ * собирает agent runtime для сохранённой SAF-директории либо default
+ * Documents-workspace и управляет отменой turn-а.
+ *
+ * Навигация передаёт только identity чата и стартовый workspace. Выбор и сборка
+ * моделей агентного pipeline принадлежат application-level runtime controller,
+ * поэтому ViewModel не принимает UI-настройку response-модели.
+ *
+ * @param initialChatId чат, который следует восстановить, или `null` для нового.
+ * @param initialWorkspaceTreeUri сохранённый SAF tree URI нового чата.
+ * @param initialWorkspaceDisplayPath отображаемый путь нового workspace.
+ * @param savedStateHandle сохраняет identity активного чата при пересоздании UI.
+ * @param chatRepository источник Room-backed истории.
+ * @param workspaceController собирает runtime для workspace активного чата.
+ * @param integrityController проверяет обязательные модели agentic pipeline.
+ * @param modelTitle отображаемое имя набора моделей.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
  */
 class KsenaxAgenticChatViewModel(
     private val initialChatId: Long?,
@@ -106,6 +121,12 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Однократно принимает initial message из navigation-state и запускает
+     * model gate до создания нового чата.
+     *
+     * @since 0.4
+     */
     fun onEnter(initialMessage: String?) {
         if (hasEntered) return
         hasEntered = true
@@ -117,10 +138,20 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Обновляет draft пользовательского сообщения.
+     *
+     * @since 0.4
+     */
     fun onInputTextChanged(value: String) {
         mutableUiState.update { it.copy(inputText = value) }
     }
 
+    /**
+     * Дописывает результат транскрипции в конец текущего draft.
+     *
+     * @since 0.4
+     */
     fun onVoiceTranscribed(transcription: String) {
         val normalized = transcription.trim()
         if (normalized.isEmpty()) return
@@ -135,6 +166,11 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Валидирует draft и запускает проверку моделей либо agentic turn.
+     *
+     * @since 0.4
+     */
     fun onSendClick() {
         val state = mutableUiState.value
         val messageText = state.inputText.trim()
@@ -154,10 +190,20 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Отменяет выполняющийся agentic turn.
+     *
+     * @since 0.4
+     */
     fun onStopTurn() {
         turnJob?.cancel()
     }
 
+    /**
+     * Отменяет model gate и удаляет несохранённое initial message.
+     *
+     * @since 0.4
+     */
     fun onCancelVerification() {
         verificationJob?.cancel()
         mutableUiState.update {
@@ -168,6 +214,11 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Переключает ViewModel на сохранённый Agentic-чат с [chatId].
+     *
+     * @since 0.4
+     */
     fun onChatSelected(chatId: Long) {
         if (mutableUiState.value.isRunning) return
         val chat = latestStoredChats.firstOrNull { it.id == chatId } ?: return
@@ -186,6 +237,11 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Завершает текущий turn при необходимости и запрашивает возврат на main.
+     *
+     * @since 0.4
+     */
     fun onNewChatClick() {
         if (mutableUiState.value.isRunning) {
             exitAfterTurnStops = true
@@ -195,6 +251,11 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Запрашивает удаление [chatId], сначала корректно останавливая активный turn.
+     *
+     * @since 0.4
+     */
     fun onDeleteChatRequested(chatId: Long) {
         val isActive = mutableUiState.value.activeChatId == chatId
         if (isActive && mutableUiState.value.isRunning) {
@@ -449,13 +510,21 @@ class KsenaxAgenticChatViewModel(
         }
     }
 
+    /**
+     * Создаёт Agentic ViewModel из process-level зависимостей и navigation-state.
+     *
+     * [SavedStateHandle] берётся из `CreationExtras` текущего chat destination.
+     * Agentic model topology намеренно не является параметром фабрики: ею владеет
+     * [KsenaxAndroidApplication.agenticWorkRuntimeController].
+     *
+     * @since 0.4
+     * @author Stephan Kolesnikov
+     */
     class Factory(
         private val application: KsenaxAndroidApplication,
         private val initialChatId: Long?,
         private val initialWorkspaceTreeUri: String?,
         private val initialWorkspaceDisplayPath: String,
-        private val responseModel: KsenaxSupportedTextModel =
-            KsenaxSupportedTextModel.Gemma,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(

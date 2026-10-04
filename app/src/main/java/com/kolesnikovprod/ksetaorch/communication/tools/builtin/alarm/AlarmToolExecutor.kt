@@ -4,12 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxRawToolArgumentsObject
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolDefinition
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolResult
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolRiskLevel
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
@@ -72,6 +69,8 @@ class AlarmToolExecutor(context: Context) : KsenaxToolExecutor {
                     delay(ALARM_REQUEST_DISPATCH_DELAY_MILLIS)
                 }
             }
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
         } catch (_: SecurityException) {
             return@withContext KsenaxToolResult.Failure(
                 callId    = call.id,
@@ -367,66 +366,5 @@ class AlarmToolExecutor(context: Context) : KsenaxToolExecutor {
         private val LOCAL_DATE_TIME_PATTERN =
             Regex("^(\\d{4})-(\\d{2})-(\\d{2})T([01]\\d|2[0-3]):([0-5]\\d)$")
 
-        fun toolNames(): List<String> =
-            listOf(TOOL_NAME)
-
-        fun definitions(): List<KsenaxToolDefinition> =
-            listOf(
-                KsenaxToolDefinition(
-                    name                          = TOOL_NAME,
-                    description                   =
-                        "Creates one or several persistent Android alarms. Multiple alarms are always spaced 5 minutes apart.",
-                    arguments                     = KsenaxRawToolArgumentsObject(ALARM_ARGUMENT_SCHEMA),
-                    riskLevel                     = KsenaxToolRiskLevel.MEDIUM,
-                    requiresConfirmationByDefault = false,
-                )
-            )
-
-        private val ALARM_ARGUMENT_SCHEMA: String =
-            """
-            {
-              "type": "object",
-              "properties": {
-                "start_local_time": {
-                  "type": "string",
-                  "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
-                  "description": "Next occurrence of a local device clock time in 24-hour HH:mm format. Use for requests such as 'на 19:00'."
-                },
-                "start_local_date_time": {
-                  "type": "string",
-                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
-                  "description": "Exact local device date and time in yyyy-MM-dd'T'HH:mm format."
-                },
-                "start_delay_minutes": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "description": "Minutes from now to the first alarm. Use for relative requests."
-                },
-                "start_delay_hours": {
-                  "type": "number",
-                  "minimum": 0,
-                  "description": "Hours from now to the first alarm. Use for phrases like 'через 9 часов'."
-                },
-                "count": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 50,
-                  "default": 1,
-                  "description": "How many system alarms to create in one tool call."
-                },
-                "label": {
-                  "type": "string",
-                  "description": "Short alarm label or reason."
-                }
-              },
-              "oneOf": [
-                { "required": ["start_local_time"] },
-                { "required": ["start_local_date_time"] },
-                { "required": ["start_delay_minutes"] },
-                { "required": ["start_delay_hours"] }
-              ],
-              "additionalProperties": false
-            }
-            """.trimIndent()
     }
 }

@@ -16,7 +16,7 @@ Outside this directory, only mechanical import/type-name migration is allowed
 unless the user explicitly widens scope. Do not alter UI/runtime/voice behavior
 from this module task.
 
-Current module version: `0.3`.
+Current module version: `0.4`.
 
 Version rule: scan local KDoc and Markdown before documenting. Use the highest
 observed module version. A new public capability may bump the minor version;
@@ -33,6 +33,8 @@ Internal implementation types use direct natural names without the prefix:
 AndroidModelDownloadBackend
 DownloadIdPreferencesStore
 DownloadTransferMetricsEstimator
+FileIntegrityVerifier
+FileTreeDeleter
 InstallCandidateFinalizer
 SingleFileInstallDelegate
 SingleFileModelDownloadGateway
@@ -89,6 +91,11 @@ Android DownloadManager
     -> InstallCandidateFinalizer
     -> KsenaxModelInstallUseCase
 ```
+
+`DownloadIdPreferencesStore` is also the process-level ownership gate for a
+target. Starting the same target is idempotent while a saved id exists, and
+terminal cleanup uses compare-and-clear methods. A stale observer or worker
+must never clear a replacement download.
 
 Layers:
 
@@ -244,7 +251,7 @@ file. `SingleFileInstallDelegate` only confirms that the candidate exists.
 
 For Vosk, preparation is a real installation stage:
 
-1. confirm a complete readable ZIP;
+1. confirm the pinned ZIP size and SHA-256;
 2. extract into `models/.vosk-installing`;
 3. reject zip-slip paths outside the temporary directory;
 4. validate required Vosk files;
@@ -330,6 +337,8 @@ Vosk Russian Small:
 target: VOSK_RU_SMALL
 purpose: SPEECH_TO_TEXT
 download: models/vosk/openksenax_vosk-model-small-ru-0.22.zip
+archive size: 46236750
+archive sha256: 961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4
 temporary extraction: models/.vosk-installing
 runtime: models/vosk/{am,conf,graph,ivector,...}
 validation: required directory structure
@@ -343,6 +352,9 @@ DownloadManager status is stale. A partial ZIP must never trigger preparation.
 - A `downloadId` means queued, not installed.
 - `NO_DOWNLOAD_ID == -1L` means no active remembered task.
 - IDs are persisted only through `DownloadIdPreferencesStore`.
+- Starting a target with an existing saved id returns that id instead of
+  enqueuing a duplicate task.
+- Terminal cleanup is ownership-checked atomically against the saved id.
 - UI and background completion share `InstallCandidateFinalizer`.
 - Finalization is serialized per target and re-checks the expected download id.
 - A superseded/cancelled task must never delete artifacts of a newer task.
@@ -356,6 +368,9 @@ DownloadManager status is stale. A partial ZIP must never trigger preparation.
 - Failed/cancelled/invalid tasks clear their saved ID and partial artifacts.
 - Successful tasks clear only the saved ID; validated runtime files remain.
 - URLs are HTTPS and pinned to immutable revisions.
+- Dynamic directory arguments are single path segments; traversal components
+  and path separators are rejected before filesystem access.
+- Recursive cleanup must not follow symbolic links outside an owned model tree.
 - Model storage remains app-specific external storage.
 - Swipe-away/process death may stop UI observation but not system transfer or
   queued background finalization.

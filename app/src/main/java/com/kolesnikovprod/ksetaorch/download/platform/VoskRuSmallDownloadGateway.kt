@@ -169,6 +169,13 @@ internal class VoskRuSmallDownloadGateway(
          */
         const val VOSK_RU_SMALL_ARCHIVE_FILE_NAME = "openksenax_vosk-model-small-ru-0.22.zip"
 
+        /** Точный размер закреплённого ZIP-артефакта. */
+        const val VOSK_RU_SMALL_ARCHIVE_SIZE_BYTES = 46_236_750L
+
+        /** SHA-256 закреплённого ZIP-артефакта. */
+        const val VOSK_RU_SMALL_ARCHIVE_SHA256 =
+            "961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4"
+
         /**
          * Имя корневой директории внутри официального zip-архива.
          *
@@ -198,7 +205,12 @@ internal class VoskRuSmallDownloadGateway(
          * Vosk. Частичный архив без central directory эту проверку не пройдет.
          */
         private fun isCompleteVoskArchive(archiveFile: File): Boolean {
-            if (!archiveFile.isFile || archiveFile.length() <= 0L) return false
+            if (
+                !archiveFile.isFile ||
+                archiveFile.length() != VOSK_RU_SMALL_ARCHIVE_SIZE_BYTES
+            ) {
+                return false
+            }
 
             return try {
                 ZipFile(archiveFile).use { zipFile ->

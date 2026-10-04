@@ -243,6 +243,8 @@ class KsenaxModelInstallCoordinator(
         activeDownloadId: Long,
         emit:            (KsenaxInstallSnapshot.() -> KsenaxInstallSnapshot) -> Unit,
     ) {
+        var observedDownloadId = activeDownloadId
+
         emit {
             copy(
                 isValidating     = false,
@@ -254,10 +256,39 @@ class KsenaxModelInstallCoordinator(
         }
 
         while (true) {
-            val status = installUseCase.queryDownloadSnapshot(activeDownloadId)
+            val savedDownloadId = installUseCase.getSavedDownloadId()
+            if (savedDownloadId != observedDownloadId) {
+                if (savedDownloadId == NO_DOWNLOAD_ID) {
+                    recoverBackgroundTerminalState(
+                        completedDownloadId = observedDownloadId,
+                        emit = emit,
+                    )
+                    return
+                }
+
+                observedDownloadId = savedDownloadId
+                emit {
+                    copy(
+                        currentDownloadId = observedDownloadId,
+                        downloadProgress = 0f,
+                        downloadState = KsenaxDownloadState.PENDING,
+                        downloadWaitReason = null,
+                        transferMetrics = KsenaxDownloadTransferMetrics(),
+                        isDownloading = true,
+                        isInterrupted = false,
+                        isCancelled = false,
+                    )
+                }
+            }
+
+            val status = installUseCase.queryDownloadSnapshot(observedDownloadId)
 
             // DownloadManager не нашёл задачу по id
             if (status == null) {
+                if (!installUseCase.clearArtifactsIfOwnedBy(observedDownloadId)) {
+                    continue
+                }
+
                 emit {
                     copy(
                         currentDownloadId     = NO_DOWNLOAD_ID,
@@ -269,8 +300,11 @@ class KsenaxModelInstallCoordinator(
                         transferMetrics       = KsenaxDownloadTransferMetrics(),
                     )
                 }
-                installUseCase.clearArtifacts()
                 break
+            }
+
+            if (installUseCase.getSavedDownloadId() != observedDownloadId) {
+                continue
             }
 
             emit {
@@ -296,23 +330,22 @@ class KsenaxModelInstallCoordinator(
                     }
 
                     val finalizationOutcome = finalizeInstallCandidate(
-                        expectedDownloadId = activeDownloadId,
+                        expectedDownloadId = observedDownloadId,
                         emit = emit,
                     )
                     val isValidInstallation =
                         finalizationOutcome == InstallFinalizationOutcome.INSTALLED
-                    val isSuperseded =
-                        finalizationOutcome == InstallFinalizationOutcome.SUPERSEDED
-                    val savedDownloadId =
-                        if (isSuperseded) {
-                            installUseCase.getSavedDownloadId()
-                        } else {
-                            NO_DOWNLOAD_ID
-                        }
+
+                    if (finalizationOutcome == InstallFinalizationOutcome.SUPERSEDED) {
+                        val replacementDownloadId = installUseCase.getSavedDownloadId()
+                        if (replacementDownloadId == NO_DOWNLOAD_ID) return
+
+                        continue
+                    }
 
                     emit {
                         copy(
-                            currentDownloadId     = savedDownloadId,
+                            currentDownloadId     = NO_DOWNLOAD_ID,
                             downloadProgress      = if (isValidInstallation) 1f else 0f,
                             transferMetrics =
                                 if (isValidInstallation) {
@@ -320,16 +353,12 @@ class KsenaxModelInstallCoordinator(
                                 } else {
                                     KsenaxDownloadTransferMetrics()
                                 },
-                            isDownloading         =
-                                isSuperseded && savedDownloadId != NO_DOWNLOAD_ID,
+                            isDownloading         = false,
                             downloadState         =
-                                when {
-                                    isValidInstallation ->
-                                        KsenaxDownloadState.SUCCESSFUL
-                                    isSuperseded ->
-                                        KsenaxDownloadState.UNKNOWN
-                                    else ->
-                                        KsenaxDownloadState.FAILED
+                                if (isValidInstallation) {
+                                    KsenaxDownloadState.SUCCESSFUL
+                                } else {
+                                    KsenaxDownloadState.FAILED
                                 },
                             downloadWaitReason    = null,
                             preparationState =
@@ -340,8 +369,7 @@ class KsenaxModelInstallCoordinator(
                                 },
                             isInterrupted =
                                 finalizationOutcome == InstallFinalizationOutcome.INVALID,
-                            isCancelled =
-                                isSuperseded && savedDownloadId == NO_DOWNLOAD_ID,
+                            isCancelled = false,
                             isInstalled      = isValidInstallation,
                             hasCandidate =
                                 if (isValidInstallation)
@@ -358,6 +386,10 @@ class KsenaxModelInstallCoordinator(
                 }
 
                 KsenaxDownloadState.FAILED -> {
+                    if (!installUseCase.clearArtifactsIfOwnedBy(observedDownloadId)) {
+                        continue
+                    }
+
                     emit {
                         copy(
                             currentDownloadId     = NO_DOWNLOAD_ID,
@@ -372,7 +404,6 @@ class KsenaxModelInstallCoordinator(
                             isValidInstallation   = KsenaxInstallCheckState.FAILURE
                         )
                     }
-                    installUseCase.clearArtifacts()
                     break
                 }
 
@@ -383,6 +414,87 @@ class KsenaxModelInstallCoordinator(
             }
 
             delay(DOWNLOAD_POLL_DELAY_MILLIS.milliseconds)
+        }
+    }
+
+    private suspend fun recoverBackgroundTerminalState(
+        completedDownloadId: Long,
+        emit: (KsenaxInstallSnapshot.() -> KsenaxInstallSnapshot) -> Unit,
+    ) {
+        val completedSnapshot =
+            installUseCase.queryDownloadSnapshot(completedDownloadId) ?: return
+
+        when (completedSnapshot.state) {
+            KsenaxDownloadState.SUCCESSFUL -> {
+                val isInstalled = installUseCase.hasValidInstallation()
+                emit {
+                    copy(
+                        currentDownloadId = NO_DOWNLOAD_ID,
+                        downloadProgress = if (isInstalled) 1f else 0f,
+                        downloadState =
+                            if (isInstalled) {
+                                KsenaxDownloadState.SUCCESSFUL
+                            } else {
+                                KsenaxDownloadState.FAILED
+                            },
+                        downloadWaitReason = null,
+                        transferMetrics =
+                            if (isInstalled) {
+                                completedSnapshot.transferMetrics
+                            } else {
+                                KsenaxDownloadTransferMetrics()
+                            },
+                        isDownloading = false,
+                        isInterrupted = !isInstalled,
+                        isCancelled = false,
+                        preparationState =
+                            if (isInstalled) {
+                                KsenaxInstallCheckState.SUCCESS
+                            } else {
+                                KsenaxInstallCheckState.FAILURE
+                            },
+                        isValidating = false,
+                        isInstalled = isInstalled,
+                        hasCandidate =
+                            if (isInstalled) {
+                                KsenaxInstallCheckState.SUCCESS
+                            } else {
+                                KsenaxInstallCheckState.FAILURE
+                            },
+                        isValidInstallation =
+                            if (isInstalled) {
+                                KsenaxInstallCheckState.SUCCESS
+                            } else {
+                                KsenaxInstallCheckState.FAILURE
+                            },
+                    )
+                }
+            }
+
+            KsenaxDownloadState.FAILED -> {
+                emit {
+                    copy(
+                        currentDownloadId = NO_DOWNLOAD_ID,
+                        downloadProgress = 0f,
+                        downloadState = KsenaxDownloadState.FAILED,
+                        downloadWaitReason = null,
+                        transferMetrics = KsenaxDownloadTransferMetrics(),
+                        isDownloading = false,
+                        isInterrupted = true,
+                        isCancelled = false,
+                        preparationState = KsenaxInstallCheckState.FAILURE,
+                        isValidating = false,
+                        isInstalled = false,
+                        hasCandidate = KsenaxInstallCheckState.FAILURE,
+                        isValidInstallation = KsenaxInstallCheckState.FAILURE,
+                    )
+                }
+            }
+
+            KsenaxDownloadState.PENDING,
+            KsenaxDownloadState.RUNNING,
+            KsenaxDownloadState.PAUSED,
+            KsenaxDownloadState.UNKNOWN -> Unit
         }
     }
 

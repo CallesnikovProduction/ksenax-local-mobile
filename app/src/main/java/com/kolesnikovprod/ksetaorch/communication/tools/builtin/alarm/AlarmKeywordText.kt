@@ -2,6 +2,12 @@ package com.kolesnikovprod.ksetaorch.communication.tools.builtin.alarm
 
 import java.util.Locale
 
+/**
+ * Общая нормализация текста для alarm-keywords и извлечения аргументов.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 internal object AlarmKeywordText {
 
     fun normalize(userMessage: String): String =

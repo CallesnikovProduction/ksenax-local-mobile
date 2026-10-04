@@ -19,6 +19,7 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -47,24 +48,30 @@ internal class KtorAddonRemoteFileDownloader(
             request.expectedSizeBytes == null ||
                 request.expectedSizeBytes > 0L,
         )
+        require(request.requestTimeoutMillis > 0L)
+        require(request.socketTimeoutMillis > 0L)
+
+        val destination = request.destination
+        val partial = File(destination.path + PARTIAL_FILE_SUFFIX)
 
         val initialUrl = urlPolicy.parse(request.rawUrl)
-            ?: return AddonRemoteFileResult.Failed(
-                reason = AddonRemoteFileFailure.UNSAFE_URL,
-                message = "URL must use an approved HTTPS host",
-            )
+            ?: run {
+                partial.delete()
+                return AddonRemoteFileResult.Failed(
+                    reason = AddonRemoteFileFailure.UNSAFE_URL,
+                    message = "URL must use an approved HTTPS host",
+                )
+            }
         if (
             request.expectedSizeBytes != null &&
             request.expectedSizeBytes > request.maximumBytes
         ) {
+            partial.delete()
             return AddonRemoteFileResult.Failed(
                 reason = AddonRemoteFileFailure.SIZE_MISMATCH,
                 message = "Published file exceeds the host size limit",
             )
         }
-
-        val destination = request.destination
-        val partial = File(destination.path + PARTIAL_FILE_SUFFIX)
 
         return try {
             destination.parentFile?.mkdirs()
@@ -86,11 +93,14 @@ internal class KtorAddonRemoteFileDownloader(
                         currentUrl = urlPolicy.resolveRedirect(
                             current = currentUrl,
                             location = outcome.location,
-                        ) ?: return AddonRemoteFileResult.Failed(
-                            reason = AddonRemoteFileFailure.UNSAFE_URL,
-                            message =
-                                "Redirect left the approved HTTPS hosts",
-                        )
+                        ) ?: run {
+                            partial.delete()
+                            return AddonRemoteFileResult.Failed(
+                                reason = AddonRemoteFileFailure.UNSAFE_URL,
+                                message =
+                                    "Redirect left the approved HTTPS hosts",
+                            )
+                        }
                     }
 
                     is RequestOutcome.Complete -> {
@@ -172,7 +182,9 @@ internal class KtorAddonRemoteFileDownloader(
                 (declaredSize <= 0L ||
                     declaredSize > request.maximumBytes)
             ) {
-                throw IOException("Invalid Content-Length")
+                throw AddonRemoteSizeMismatchException(
+                    "Published file has an invalid or excessive size",
+                )
             }
             if (
                 request.expectedSizeBytes != null &&
@@ -200,7 +212,7 @@ internal class KtorAddonRemoteFileDownloader(
 
                     received += count
                     if (received > request.maximumBytes) {
-                        throw IOException(
+                        throw AddonRemoteSizeMismatchException(
                             "File exceeds the host size limit",
                         )
                     }
@@ -234,7 +246,7 @@ internal class KtorAddonRemoteFileDownloader(
         const val PARTIAL_FILE_SUFFIX = ".part"
         const val MAX_REDIRECTS = 5
         const val BUFFER_SIZE = 64 * 1024
-        const val USER_AGENT = "OpenKsenax-Addon-Asset-Downloader/0.3"
+        const val USER_AGENT = "OpenKsenax-Addon-Asset-Downloader/0.4"
         val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)
     }
 }
@@ -322,7 +334,9 @@ internal class AddonRemoteUrlPolicy(
 ) {
 
     private val allowedHosts =
-        allowedHosts.mapTo(mutableSetOf(), String::lowercase)
+        allowedHosts.mapTo(mutableSetOf()) { host ->
+            host.lowercase(Locale.ROOT)
+        }
 
     init {
         require(this.allowedHosts.isNotEmpty())
@@ -350,9 +364,10 @@ internal class AddonRemoteUrlPolicy(
             url.user == null &&
             url.password == null &&
             url.fragment.isEmpty() &&
-            url.host.lowercase() in allowedHosts
+            url.host.lowercase(Locale.ROOT) in allowedHosts
     }
 }
 
-private class AddonRemoteSizeMismatchException :
-    IOException("Downloaded size does not match registry")
+private class AddonRemoteSizeMismatchException(
+    message: String = "Downloaded size does not match registry",
+) : IOException(message)

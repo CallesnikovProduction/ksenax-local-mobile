@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -135,17 +137,17 @@ import kotlin.time.Duration.Companion.milliseconds
     /**
      * Нужен ниже для [LaunchedEffect], номер события глюка
      */
-    var statusPulseId          by remember { mutableStateOf(0) }
+    var statusPulseId          by remember { mutableIntStateOf(0) }
 
     /**
      * Уровень порчи от `0f` до `1f`.
      */
-    var corruptionLevel        by remember { mutableStateOf(0f) }
+    var corruptionLevel        by remember { mutableFloatStateOf(0f) }
 
     /**
      * Сид для псевдослучайных глитч-эффектов.
      */
-    var glitchSeed             by remember { mutableStateOf(0) }
+    var glitchSeed             by remember { mutableIntStateOf(0) }
 
     /**
      * Флаг финального collapse-режима.
@@ -170,7 +172,7 @@ import kotlin.time.Duration.Companion.milliseconds
      * - `3f`: ещё быстрее
      * - и так далее
      */
-    var speedMultiplier        by remember { mutableStateOf(1f) }
+    var speedMultiplier        by remember { mutableFloatStateOf(1f) }
 
     /**
      * Флаг удержания пальца на экране.

@@ -2,6 +2,7 @@ package com.kolesnikovprod.ksetaorch.download.domain
 
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
+import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.ConcurrentHashMap
 
@@ -14,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * [expectedDownloadId] защищает от запоздалой финализации: если пользователь
  * уже отменил задачу или начал новую, старый владелец не подтверждает установку.
+ * `null` означает локальное восстановление, для которого ожидается отсутствие
+ * активного сохранённого id.
  *
  * @since 0.3
  */
@@ -45,8 +48,7 @@ internal class InstallCandidateFinalizer(
             }
 
             if (!isPrepared) {
-                installUseCase.clearArtifacts()
-                return@withTargetLock InstallFinalizationOutcome.INVALID
+                return@withTargetLock clearInvalidCandidate(expectedDownloadId)
             }
 
             onEvent(InstallFinalizationEvent.ValidationStarted)
@@ -62,13 +64,35 @@ internal class InstallCandidateFinalizer(
             }
 
             if (isValid) {
-                installUseCase.clearSavedDownloadId()
-                InstallFinalizationOutcome.INSTALLED
+                completeValidInstallation(expectedDownloadId)
             } else {
-                installUseCase.clearArtifacts()
-                InstallFinalizationOutcome.INVALID
+                clearInvalidCandidate(expectedDownloadId)
             }
         }
+    }
+
+    private suspend fun completeValidInstallation(
+        expectedDownloadId: Long?,
+    ): InstallFinalizationOutcome {
+        val ownerId = expectedDownloadId ?: NO_DOWNLOAD_ID
+        if (installUseCase.clearSavedDownloadIdIfOwnedBy(ownerId)) {
+            return InstallFinalizationOutcome.INSTALLED
+        }
+
+        return resolveSupersededOutcome(expectedDownloadId)
+            ?: InstallFinalizationOutcome.SUPERSEDED
+    }
+
+    private suspend fun clearInvalidCandidate(
+        expectedDownloadId: Long?,
+    ): InstallFinalizationOutcome {
+        val ownerId = expectedDownloadId ?: NO_DOWNLOAD_ID
+        if (installUseCase.clearArtifactsIfOwnedBy(ownerId)) {
+            return InstallFinalizationOutcome.INVALID
+        }
+
+        return resolveSupersededOutcome(expectedDownloadId)
+            ?: InstallFinalizationOutcome.SUPERSEDED
     }
 
     /**
@@ -78,10 +102,8 @@ internal class InstallCandidateFinalizer(
     private suspend fun resolveSupersededOutcome(
         expectedDownloadId: Long?,
     ): InstallFinalizationOutcome? {
-        if (
-            expectedDownloadId == null ||
-            installUseCase.getSavedDownloadId() == expectedDownloadId
-        ) {
+        val ownerId = expectedDownloadId ?: NO_DOWNLOAD_ID
+        if (installUseCase.getSavedDownloadId() == ownerId) {
             return null
         }
 

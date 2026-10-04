@@ -171,6 +171,41 @@ class DefaultAddonRegistryTest {
         )
     }
 
+    @Test
+    fun firstOfflineRefreshStillPublishesDiscoveredInstalledAddon() =
+        runBlocking {
+            val registry = createRegistry(
+                cacheLoadedAt = 1_000L,
+                currentTime = 1_100L,
+                maximumCacheAge = 1_000L,
+                catalogOverride = object : AddonCatalog {
+                    override suspend fun getSnapshot(
+                        refreshPolicy: CatalogRefreshPolicy,
+                    ): AddonCatalogSnapshot {
+                        throw AddonCatalogException.NetworkUnavailable(
+                            cause = IOException("offline"),
+                        )
+                    }
+                },
+            )
+
+            val state = registry.refresh(
+                AddonRegistryRefreshMode.FORCE_REMOTE,
+            )
+
+            val catalogStatus = state.catalogStatus as
+                AddonRegistrySourceStatus.Unavailable
+            assertEquals(
+                AddonRegistrySourceFailureKind.NETWORK_UNAVAILABLE,
+                catalogStatus.failureKind,
+            )
+            val addon = state.addons.single()
+            assertTrue(addon.isInstalled)
+            assertTrue(addon.canOpenUi)
+            assertEquals(PACKAGE_NAME, addon.installedMetadata?.packageName)
+            assertNull(addon.catalogMetadata)
+        }
+
     private fun createRegistry(
         cacheLoadedAt: Long,
         currentTime: Long,

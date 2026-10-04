@@ -7,6 +7,11 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.tool
+import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelFunctionRequest
+import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelFunctionResponse
+import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelFunctionCall
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxLiteRtAudioBackend
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelRequest
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelResponse
@@ -313,6 +318,36 @@ internal class LiteRtModelSessionEngine(
             }
         }
     }.flowOn(Dispatchers.Default)
+
+    override suspend fun askFunctions(
+        request: KsenaxModelFunctionRequest,
+    ): KsenaxModelFunctionResponse = withContext(Dispatchers.Default) {
+        inferenceMutex.withLock {
+            initEngineIfNeeded()
+            requireNotNullEngine().createConversation(
+                ConversationConfig(
+                    systemInstruction = Contents.of(request.systemInstruction),
+                    tools = request.functions.map { tool(FunctionCallAdapter(it)) },
+                    automaticToolCalling = false,
+                    samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0),
+                ),
+            ).use { conversation ->
+                val started = System.nanoTime()
+                val calls = mutableListOf<KsenaxModelFunctionCall>()
+                try {
+                    conversation.sendMessageAsync(request.userMessage).collect { message ->
+                        calls += message.toolCalls.map { call ->
+                            KsenaxModelFunctionCall(call.name, call.arguments.toFunctionJson().toString())
+                        }
+                    }
+                    KsenaxModelFunctionResponse(calls, (System.nanoTime() - started) / NANOSECONDS_PER_MILLISECOND)
+                } catch (cancellation: CancellationException) {
+                    runCatching { conversation.cancelProcess() }
+                    throw cancellation
+                }
+            }
+        }
+    }
 
     override fun streamEphemeral(
         userText: String,

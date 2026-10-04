@@ -3,6 +3,9 @@ package com.kolesnikovprod.ksetaorch.ui.main.settings
 /**
  * Модели, которые приложение умеет использовать как основной текстовый
  * runtime. Этот выбор не связан с моделью распознавания речи.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
  */
 enum class KsenaxSupportedTextModel(
     val title: String,

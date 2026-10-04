@@ -2,12 +2,23 @@ package com.kolesnikovprod.ksetaorch.addons.catalog.validation
 
 import com.kolesnikovprod.ksetaorch.addons.catalog.AddonChannel
 import com.kolesnikovprod.ksetaorch.addons.catalog.serialization.AddonCatalogDocument
+import com.kolesnikovprod.ksetaorch.addons.identity.AddonIdentityPolicy
 import dev.openksenax.addons.contract.AddonExecutionModel
 import dev.openksenax.addons.contract.AddonId
 import dev.openksenax.addons.contract.HostCapabilityId
 import java.net.URI
 import java.util.Locale
 
+/**
+ * Полная семантическая проверка внешнего registry документа до его
+ * преобразования во внутренние типы.
+ *
+ * Валидатор накапливает все найденные нарушения, чтобы отклонённый документ
+ * можно было диагностировать одним проходом и при этом не допустить частично
+ * принятого каталога.
+ *
+ * @since 0.4
+ */
 internal class DefaultAddonCatalogValidator(
     private val supportedSchemaVersion: Int,
     private val expectedChannel: AddonChannel,
@@ -107,12 +118,21 @@ internal class DefaultAddonCatalogValidator(
                     path = "$basePath.addonId",
                     message = "Must be a valid lowercase AddonId",
                 )
+            } else if (
+                !AddonIdentityPolicy.isSupportedAddonId(
+                    AddonId(entry.addonId),
+                )
+            ) {
+                violations += CatalogViolation(
+                    path = "$basePath.addonId",
+                    message = "Exceeds the host identity length limit",
+                )
             }
 
-            if (!PACKAGE_NAME_REGEX.matches(entry.packageName)) {
+            if (!AddonIdentityPolicy.isSupportedPackageName(entry.packageName)) {
                 violations += CatalogViolation(
                     path = "$basePath.packageName",
-                    message = "Invalid Android package name",
+                    message = "Invalid or unsupported Android package name",
                 )
             }
 
@@ -347,10 +367,5 @@ internal class DefaultAddonCatalogValidator(
             pattern = "^[A-Fa-f0-9]{64}$",
         )
 
-        val PACKAGE_NAME_REGEX = Regex(
-            pattern =
-                "^[a-z][a-z0-9_]*" +
-                        "(\\.[a-z][a-z0-9_]*)+$",
-        )
     }
 }

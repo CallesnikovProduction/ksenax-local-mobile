@@ -15,45 +15,21 @@ import java.util.Locale
  */
 object TorchOneShotKeywords : KsenaxOneShotKeywords {
 
-    private val objectWords: Set<String> =
-        setOf(
-            "фонарик",
-            "фонарь",
-            "фонаря",
-            "фонарём",
-            "фонарем",
-            "вспышка",
-            "вспышку",
-            "свет",
-            "torch",
-            "flashlight",
-        )
-
-    /**
-     * Проверяет нормализованный prompt без учёта регистра и лишних пробелов.
-     */
     override fun matches(userMessage: String): Boolean {
-        val normalizedPrompt = userMessage
+        val words = userMessage
             .lowercase(Locale.ROOT)
-            .normalizeWhitespace()
-            .trim()
+            .split(WORD_SEPARATOR)
+            .filter(String::isNotBlank)
 
-        return objectWords.any(normalizedPrompt::contains)
+        return words.any { word ->
+            word.startsWith("фонар") ||
+                word.startsWith("вспыш") ||
+                word == "torch" ||
+                word == "flashlight"
+        } || (
+            "свет" in words && words.any { word -> word.startsWith("телефон") }
+        )
     }
 
-    private fun String.normalizeWhitespace(): String =
-        buildString(length) {
-            var previousWasWhitespace = false
-            this@normalizeWhitespace.forEach { symbol ->
-                if (symbol.isWhitespace()) {
-                    if (!previousWasWhitespace) {
-                        append(' ')
-                        previousWasWhitespace = true
-                    }
-                } else {
-                    append(symbol)
-                    previousWasWhitespace = false
-                }
-            }
-        }
+    private val WORD_SEPARATOR = Regex("""[^\p{L}\p{N}_]+""")
 }

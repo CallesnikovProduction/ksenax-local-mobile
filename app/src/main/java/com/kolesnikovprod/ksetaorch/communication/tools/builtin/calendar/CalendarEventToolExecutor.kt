@@ -4,12 +4,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.provider.CalendarContract
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxRawToolArgumentsObject
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolDefinition
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolResult
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolRiskLevel
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -395,86 +392,5 @@ class CalendarEventToolExecutor(context: Context) : KsenaxToolExecutor {
         private const val MAX_TITLE_LENGTH = 140
         private const val MAX_ATTENDEE_COUNT = 50
 
-        fun toolNames(): List<String> =
-            listOf(TOOL_NAME)
-
-        fun definitions(): List<KsenaxToolDefinition> =
-            listOf(
-                KsenaxToolDefinition(
-                    name                          = TOOL_NAME,
-                    description                   = "Prepares a new Android calendar event in the system Calendar app.",
-                    arguments                     = KsenaxRawToolArgumentsObject(CALENDAR_EVENT_ARGUMENT_SCHEMA),
-                    riskLevel                     = KsenaxToolRiskLevel.MEDIUM,
-                    requiresConfirmationByDefault = false,
-                )
-            )
-
-        private val CALENDAR_EVENT_ARGUMENT_SCHEMA: String =
-            """
-            {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string",
-                  "description": "Short calendar event title."
-                },
-                "start_at_millis": {
-                  "type": "integer",
-                  "description": "Unix timestamp in milliseconds for the event start. Use current prompt time as the reference."
-                },
-                "start_delay_minutes": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "description": "Minutes from now to the event start. Use for relative requests."
-                },
-                "start_delay_hours": {
-                  "type": "number",
-                  "minimum": 0,
-                  "description": "Hours from now to the event start. Use for phrases like 'через 2 часа'."
-                },
-                "end_at_millis": {
-                  "type": "integer",
-                  "description": "Unix timestamp in milliseconds for the event end."
-                },
-                "duration_minutes": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 527040,
-                  "description": "Event duration in minutes. Defaults to 60 minutes, or one day for all-day events."
-                },
-                "all_day": {
-                  "type": "boolean",
-                  "description": "true for an all-day event."
-                },
-                "location": {
-                  "type": "string",
-                  "description": "Optional event place."
-                },
-                "description": {
-                  "type": "string",
-                  "description": "Optional event notes."
-                },
-                "attendees": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "Optional attendee email addresses."
-                },
-                "availability": {
-                  "type": "string",
-                  "enum": ["busy", "free", "tentative"],
-                  "description": "Calendar availability. Default is busy."
-                }
-              },
-              "required": ["title"],
-              "anyOf": [
-                { "required": ["start_at_millis"] },
-                { "required": ["start_delay_minutes"] },
-                { "required": ["start_delay_hours"] }
-              ],
-              "additionalProperties": false
-            }
-            """.trimIndent()
     }
 }

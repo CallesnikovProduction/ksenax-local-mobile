@@ -106,6 +106,6 @@ AIDL/Parcelable — публичная межпроцессная ABI-грани
 Граница download/system installer/PackageManager описана в
 [`notes/INSTALLATION-LIFECYCLE.md`](notes/INSTALLATION-LIFECYCLE.md).
 
-Новые public-типы и стабильные wire-контракты получают KDoc с `@since 0.3`.
+Новые public-типы и стабильные wire-контракты получают KDoc с `@since 0.4`.
 Минимальные проверки: catalog validation/fallback, registry merge/trust/grants,
 discovery metadata parsing, coordinator decisions и provider request/auth rules.

@@ -17,6 +17,7 @@ import com.kolesnikovprod.ksetaorch.addons.registry.RegisteredAddon
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -204,25 +205,14 @@ internal class AndroidAddonApkVerifier(
         ) return "Manifest minimum host API does not match registry"
         val executionModel = metadata.readString(
             AddonManifestContract.META_EXECUTION_MODEL,
-        )?.let { value ->
-            runCatching {
-                AddonExecutionModel.valueOf(value.uppercase())
-            }.getOrNull()
-        }
+        )?.toAddonExecutionModelOrNull()
         if (executionModel != published.executionModel) {
             return "Manifest execution model does not match registry"
         }
         val capabilities = metadata.readString(
             AddonManifestContract.META_REQUIRED_CAPABILITIES,
-        ).orEmpty()
-            .split(',')
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-            .mapNotNull { value ->
-                runCatching { HostCapabilityId(value) }
-                    .getOrNull()
-            }
-            .toSet()
+        ).orEmpty().toHostCapabilityIdsOrNull()
+            ?: return "Manifest capabilities contain an invalid identifier"
         if (capabilities != published.requiredHostCapabilities) {
             return "Manifest capabilities do not match registry"
         }
@@ -264,6 +254,38 @@ internal class AndroidAddonApkVerifier(
         reason: AddonArtifactFailure,
         message: String?,
     ) = AddonArtifactPreparationResult.Failed(reason, message)
+}
+
+/**
+ * Декодирует execution model из Android manifest независимо от locale
+ * устройства. Неизвестное wire-значение остаётся невалидным.
+ *
+ * @since 0.4
+ */
+internal fun String.toAddonExecutionModelOrNull(): AddonExecutionModel? {
+    return runCatching {
+        AddonExecutionModel.valueOf(trim().uppercase(Locale.ROOT))
+    }.getOrNull()
+}
+
+/**
+ * Строго декодирует список capability IDs из Android manifest.
+ *
+ * Пустая строка означает пустой набор. Если хотя бы один непустой элемент
+ * нарушает контракт [HostCapabilityId], весь список считается невалидным —
+ * некорректная metadata не может быть молча ослаблена удалением элемента.
+ *
+ * @since 0.4
+ */
+internal fun String.toHostCapabilityIdsOrNull(): Set<HostCapabilityId>? {
+    val values = split(',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+    val capabilities = values.map { value ->
+        runCatching { HostCapabilityId(value) }.getOrNull()
+            ?: return null
+    }
+    return capabilities.toSet()
 }
 
 /**

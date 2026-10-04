@@ -8,12 +8,9 @@ import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import androidx.core.content.ContextCompat
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxRawToolArgumentsObject
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolDefinition
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolResult
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolRiskLevel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONException
@@ -245,43 +242,5 @@ class FlashlightToolExecutor(context: Context) : KsenaxToolExecutor {
          */
         const val TOOL_NAME = "torch_tool"
 
-        /**
-         * Возвращает описание инструмента для маршрутизирующей модели.
-         *
-         * @since 0.2
-         */
-        fun definitions(): List<KsenaxToolDefinition> =
-            listOf(
-                KsenaxToolDefinition(
-                    name        = TOOL_NAME,
-                    description = "Controls the device flashlight. " +
-                                  "Set enabled=true to turn it ON, enabled=false to turn it OFF.",
-                    arguments   = KsenaxRawToolArgumentsObject(FLASHLIGHT_ARGUMENT_SCHEMA),
-                    riskLevel   = KsenaxToolRiskLevel.LOW,
-                    requiresConfirmationByDefault = false,
-                )
-            )
-
-        /**
-         * JSON-схема аргументов фонарика.
-         *
-         * Схема требует одно поле `enabled`: `true` включает фонарик, `false`
-         * выключает его.
-         *
-         * @since 0.2
-         */
-        private val FLASHLIGHT_ARGUMENT_SCHEMA: String =
-            """
-            {
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                }
-              },
-              "required": ["enabled"],
-              "additionalProperties": false
-            }
-            """.trimIndent()
     }
 }

@@ -21,5 +21,5 @@ APK общим Ktor client, проверяет размер, SHA-256, Android pa
 используется APK и presentation-баннерами. `download` остаётся владельцем
 только APK-специализации и Android archive verification.
 
-Новая публичная документация этого контура относится к OpenKsenax 0.3 и
-содержит `@since 0.3`.
+Новая публичная документация этого контура относится к OpenKsenax 0.4 и
+содержит `@since 0.4`.

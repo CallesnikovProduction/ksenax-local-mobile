@@ -145,6 +145,12 @@ data class KsenaxMainUiState(
     }
 }
 
+/**
+ * Верхнеуровневые presentation-состояния overlay установки модели.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
+ */
 enum class KsenaxModelDownloadOverlayState {
     Hidden,
     ModelOffer,
@@ -152,6 +158,12 @@ enum class KsenaxModelDownloadOverlayState {
     Completed,
 }
 
+/**
+ * Поддерживаемые model install-targets и их UI-метаданные.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
+ */
 enum class KsenaxInstallOverlayTarget(
     val installTarget: KsenaxInstallTarget,
     val overlayTitle: String,

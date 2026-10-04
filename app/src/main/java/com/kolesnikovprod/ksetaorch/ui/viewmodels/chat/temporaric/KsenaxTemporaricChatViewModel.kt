@@ -55,6 +55,12 @@ class KsenaxTemporaricChatViewModel(
     private var exitAfterGeneration = false
     private var clearBeforeExit = false
 
+    /**
+     * Принимает initial message главного экрана и подтверждает его consumption
+     * одноразовым effect только после успешного submit.
+     *
+     * @since 0.4
+     */
     fun onMessageFromMain(messageText: String) {
         if (submit(messageText)) {
             effectChannel.trySend(
@@ -65,10 +71,20 @@ class KsenaxTemporaricChatViewModel(
         }
     }
 
+    /**
+     * Обновляет draft пользовательского сообщения.
+     *
+     * @since 0.4
+     */
     fun onInputTextChanged(value: String) {
         mutableUiState.update { state -> state.copy(inputText = value) }
     }
 
+    /**
+     * Дописывает результат транскрипции в конец текущего draft.
+     *
+     * @since 0.4
+     */
     fun onVoiceTranscribed(transcription: String) {
         val normalized = transcription.trim()
         if (normalized.isEmpty()) return
@@ -83,6 +99,11 @@ class KsenaxTemporaricChatViewModel(
         }
     }
 
+    /**
+     * Отправляет текущий draft в stateless model pipeline.
+     *
+     * @since 0.4
+     */
     fun onSendClick() {
         submit(mutableUiState.value.inputText)
     }
@@ -282,12 +303,22 @@ class KsenaxTemporaricChatViewModel(
         }
     }
 
+    /**
+     * Останавливает генерацию, сохраняя уже полученный partial response.
+     *
+     * @since 0.4
+     */
     fun onStopGeneration() {
         if (generationJob?.isActive != true) return
         commitPartialOnCancellation = true
         generationJob?.cancel()
     }
 
+    /**
+     * Останавливает активную генерацию и запрашивает возврат на main.
+     *
+     * @since 0.4
+     */
     fun onExitRequested() {
         if (mutableUiState.value.isGenerating) {
             exitAfterGeneration = true
@@ -300,6 +331,8 @@ class KsenaxTemporaricChatViewModel(
     /**
      * Останавливает inference перед переходом на другой destination, не
      * уничтожая оперативную переписку и не отправляя навигационный эффект.
+     *
+     * @since 0.4
      */
     fun onLeaveForNavigation() {
         if (mutableUiState.value.isGenerating) {
@@ -307,6 +340,11 @@ class KsenaxTemporaricChatViewModel(
         }
     }
 
+    /**
+     * Очищает RAM-only сессию и запрашивает возврат на main.
+     *
+     * @since 0.4
+     */
     fun onNewChatClick() {
         if (mutableUiState.value.isGenerating) {
             clearBeforeExit = true
@@ -318,6 +356,11 @@ class KsenaxTemporaricChatViewModel(
         }
     }
 
+    /**
+     * Отменяет model gate и очищает несохранённую RAM-only сессию.
+     *
+     * @since 0.4
+     */
     fun onCancelVerification() {
         verificationJob?.cancel()
         clearSession()
@@ -362,6 +405,12 @@ class KsenaxTemporaricChatViewModel(
         }
     }
 
+    /**
+     * Выбирает stateless coordinator и integrity controller для response-модели.
+     *
+     * @since 0.4
+     * @author Stephan Kolesnikov
+     */
     class Factory(
         private val application: KsenaxAndroidApplication,
         private val responseModel: KsenaxSupportedTextModel =

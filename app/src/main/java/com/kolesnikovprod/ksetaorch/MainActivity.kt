@@ -8,8 +8,6 @@ import androidx.compose.material3.MaterialTheme
 
 import com.kolesnikovprod.ksetaorch.ui.KsenaxAppRoute
 
-const val CURRENT_APPLICATION_VERSION = 0.3f
-
 /**
  * Стандартная Android-точка входа (entry-point Activity),
  * которая запускает Compose-экран приложения.
@@ -47,7 +45,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
 
                 // Запуск самого маршрутизатора по ViewModels.
-                KsenaxAppRoute(CURRENT_APPLICATION_VERSION)
+                KsenaxAppRoute(BuildConfig.VERSION_NAME)
             }
         }
     }

@@ -2,9 +2,9 @@ package com.kolesnikovprod.ksetaorch.communication.work.actions
 
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
-import com.kolesnikovprod.ksetaorch.communication.work.oneshot.KsenaxOneShotKeywords
 import com.kolesnikovprod.ksetaorch.communication.work.oneshot.KsenaxOneShotToolProtocol
 import com.kolesnikovprod.ksetaorch.communication.work.planning.KsenaxWorkPlanStep
+import java.time.ZonedDateTime
 
 /**
  * Один набор маленьких FG-actions.
@@ -25,28 +25,46 @@ interface KsenaxOneShotActionKit {
 
     val actionSpecs: List<KsenaxWorkActionSpec>
 
-    val planningMode: KsenaxActionPlanningMode
-        get() = KsenaxActionPlanningMode.Planable
+    /**
+     * Исторические подсказки Keywords. Семантический runtime их не использует;
+     * доступность быстрых функций задаёт [supportsFastPath].
+     */
+    val directRoute: KsenaxDirectActionRoute?
+        get() = null
 
     val exposePlannerInputToFunctionGemma: Boolean
         get() = true
 
-    val keywords: KsenaxOneShotKeywords
+    /**
+     * Объявления kit доступны семантическому быстрому маршрутизатору FG.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    val supportsFastPath: Boolean
+        get() = false
 
     val protocol: KsenaxOneShotToolProtocol
 
     val executor: KsenaxToolExecutor
 
-    fun supports(userMessage: String): Boolean =
-        keywords.matches(userMessage)
+    fun matchesDirectRoute(userMessage: String): Boolean =
+        directRoute?.keywords?.matches(userMessage) == true
 
-    fun preferredDirectActionName(userMessage: String): String? = null
+    fun buildDirectActionDraft(userMessage: String): KsenaxActionInputDraft? = null
 
-    fun buildDirectActionDraft(userMessage: String): KsenaxActionInputDraft? =
-        preferredDirectActionName(userMessage)
-            ?.let { actionName ->
-                KsenaxActionInputDraft(preferredActionName = actionName)
-            }
+    /**
+     * Закрепляет явные параметры UP после выбора функции моделью.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    fun buildFastActionDraft(userMessage: String, actionName: String, now: ZonedDateTime): KsenaxActionInputDraft? = null
+
+    /**
+     * Проверяет предметные ограничения перед policy и executor.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    fun validateExecutableCall(call: KsenaxToolCall, now: ZonedDateTime) = Unit
 
     fun supportsAction(actionName: String): Boolean =
         actionSpecs.any { spec -> spec.name == actionName }
@@ -59,9 +77,9 @@ interface KsenaxOneShotActionKit {
     /**
      * Последний seam перед Android executor-ом.
      *
-     * По умолчанию executor получает аргументы, которые вернула FG. Planable
-     * actions вроде заметок могут заменить arguments на G4 planner input, чтобы
-     * не заставлять FunctionGemma переносить большие тексты.
+     * По умолчанию executor получает аргументы FG. Планируемые действия вроде
+     * заметок могут заменить их данными G4, чтобы FunctionGemma не переносила
+     * большие тексты.
      */
     fun resolveExecutableCall(
         userMessage: String,

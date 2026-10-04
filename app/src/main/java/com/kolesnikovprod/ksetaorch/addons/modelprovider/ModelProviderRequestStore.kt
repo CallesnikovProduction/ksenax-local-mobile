@@ -85,17 +85,32 @@ internal class ModelProviderRequestStore {
     }
 }
 
+/**
+ * Типизированная причина отказа зарегистрировать параллельный IPC-запрос.
+ *
+ * @since 0.4
+ */
 internal data class ModelProviderRegistrationFailure(
     val code: ModelFailureCode,
     val message: String,
     val retryable: Boolean,
 )
 
+/**
+ * Уникальный в пределах Binder UID ключ активного запроса.
+ *
+ * @since 0.4
+ */
 internal data class ModelProviderRequestKey(
     val callingUid: Int,
     val requestId: String,
 )
 
+/**
+ * Ресурсы активного model-provider запроса и связь со смертью callback.
+ *
+ * @since 0.4
+ */
 internal data class TrackedModelRequest(
     val callingUid: Int,
     val job: Job,

@@ -6,6 +6,8 @@ import com.kolesnikovprod.ksetaorch.addons.registry.AddonInstallationState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonTrustState
 import com.kolesnikovprod.ksetaorch.addons.registry.RegisteredAddon
+import com.kolesnikovprod.ksetaorch.addons.storage.contract.InstalledAddonRecord
+import java.util.Locale
 
 /**
  * Единственное преобразование registry domain в текстовое UI-состояние.
@@ -25,6 +27,7 @@ internal object AddonUiMapper {
         updateMessages: Map<AddonId, String> = emptyMap(),
         infoOverlay: AddonInfoUiModel? = null,
         hiddenAvailableAddonIds: Set<AddonId> = emptySet(),
+        installedRecords: Map<AddonId, InstalledAddonRecord> = emptyMap(),
     ): AddonCatalogUiState {
         return AddonCatalogUiState(
             cards = registryState.addons
@@ -43,6 +46,7 @@ internal object AddonUiMapper {
                         isCheckingUpdate =
                             addon.addonId in checkingUpdateIds,
                         updateMessage = updateMessages[addon.addonId],
+                        localRecord = installedRecords[addon.addonId],
                     )
                 },
             selectedAddonId = selectedAddonId,
@@ -60,17 +64,28 @@ internal object AddonUiMapper {
         bannerState: AddonBannerUiState?,
         isCheckingUpdate: Boolean,
         updateMessage: String?,
+        localRecord: InstalledAddonRecord?,
     ): AddonCardUiModel {
         val published = catalogMetadata
         val installed = installedMetadata
-        val bannerArtifact = published?.bannerArtifact
+        val bannerSha256 = if (isInstalled) {
+            localRecord?.bannerSha256
+                ?: published?.bannerArtifact?.sha256
+        } else {
+            published?.bannerArtifact?.sha256
+        }
         return AddonCardUiModel(
             addonId = addonId,
             packageName = published?.packageName
                 ?: installed?.packageName
+                ?: localRecord?.packageName
                 ?: addonId.value,
-            title = displayName,
+            title = published?.displayName
+                ?: localRecord?.displayName
+                ?: displayName,
             description = published?.shortDescription
+                ?: localRecord?.shortDescription
+                    ?.takeIf(String::isNotBlank)
                 ?: "Установленный addon APK без доступного описания каталога.",
             versionLabel = when {
                 installed?.versionName != null -> "v${installed.versionName}"
@@ -104,10 +119,10 @@ internal object AddonUiMapper {
             updateMessage = updateMessage,
             banner = bannerState
                 ?.takeIf { state ->
-                    state.sha256 == bannerArtifact?.sha256
+                    state.sha256 == bannerSha256
                 }
-                ?: bannerArtifact?.let { artifact ->
-                    AddonBannerUiState.Loading(artifact.sha256)
+                ?: bannerSha256?.let { sha256 ->
+                    AddonBannerUiState.Loading(sha256)
                 }
                 ?: AddonBannerUiState.Unavailable(sha256 = null),
         )
@@ -135,7 +150,8 @@ internal object AddonUiMapper {
     private fun AddonCompatibility.toText(): String = when (this) {
         AddonCompatibility.Compatible -> "Совместим с этим OKx"
         is AddonCompatibility.Unknown ->
-            "Совместимость не доказана: ${reason.name.lowercase()}"
+            "Совместимость не доказана: " +
+                reason.name.lowercase(Locale.ROOT)
         is AddonCompatibility.Incompatible ->
             "Несовместим: ${reasons.size} проверок не пройдено"
     }

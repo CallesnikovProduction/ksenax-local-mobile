@@ -5,6 +5,16 @@ import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxChat
 import com.kolesnikovprod.ksetaorch.ui.main.model.KsenaxMessage
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelGateState
 
+/**
+ * Immutable presentation-state одного Agentic destination.
+ *
+ * Room остаётся источником сохранённой истории, а [transientUserText] временно
+ * удерживает initial message до его записи. Workspace относится к активному
+ * чату и не является глобальной настройкой приложения.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
+ */
 data class KsenaxAgenticChatUiState(
     val inputText: String = "",
     val chats: List<KsenaxChat> = emptyList(),
@@ -47,6 +57,12 @@ data class KsenaxAgenticChatUiState(
     }
 }
 
+/**
+ * Одноразовые события Agentic ViewModel, которые должен обработать route/UI.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
+ */
 sealed interface KsenaxAgenticChatEffect {
     data class InitialMessageCommitted(val text: String) : KsenaxAgenticChatEffect
     data class DeleteChat(

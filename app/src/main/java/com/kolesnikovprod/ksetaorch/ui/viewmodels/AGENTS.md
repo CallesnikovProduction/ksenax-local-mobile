@@ -105,6 +105,13 @@ FunctionGemma или Vosk. Это presentation-target, а не download backend 
 - продолжает отложенное действие после установки модели;
 - закрывает voice controller в `onCleared`.
 
+Для создания Basic/Temporaric ViewModel navigation вызывает
+`responseModelForChatRoute()`. Метод сначала использует install-aware выбор из
+`uiState`, затем сохранённый settings snapshot (на случай раннего восстановления
+destination после process recreation) и только потом Gemma как install-target
+по умолчанию. Agentic ViewModel не принимает этот выбор: составом её model
+pipeline владеет application-level agent runtime.
+
 ViewModel наследует `AndroidViewModel`, потому что текущие install/voice
 зависимости создаются с application context. В проекте пока нет DI для этого
 контура: use case, controller и coordinator собираются внутри ViewModel.
@@ -142,7 +149,10 @@ KsenaxAgenticChatScreen
     -> controllers/modelvalidation/KsenaxCompositeModelIntegrityVerifier
     -> KsenaxAgenticWorkController
     -> KsenaxAgenticWorkRuntime
-    -> G4 planning -> FunctionGemma one-shot action -> Android executor
+    -> FunctionGemma route
+       -> direct one-shot action
+       -> G4 plan -> FunctionGemma one-shot steps
+    -> Android executor
     -> KsenaxChatRepository
     -> Room
 ```

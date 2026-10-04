@@ -3,15 +3,15 @@ package com.kolesnikovprod.ksetaorch.communication.work.actions
 /**
  * Локально извлечённый черновик аргументов для маленького OneShot action.
  *
- * Это не замена FunctionGemma: runtime всё равно отправляет prompt в FG и
- * ждёт function-call. Draft нужен, чтобы не заставлять 270M-модель стабильно
- * считать числа, падежи и русские единицы времени.
+ * Это не решение о запуске tool-а: конкретную функцию всё равно выбирает
+ * FunctionGemma. Draft хранит детерминированно извлечённые факты, чтобы после
+ * модельного выбора проверить семантику и не потерять числа или единицы.
  *
  * @since 0.2
  * @author Stephan Kolesnikov
  */
 data class KsenaxActionInputDraft(
-    val preferredActionName: String? = null,
-    val plannerInputJson: String? = null,
+    val expectedActionName: String? = null,
+    val argumentsJson: String? = null,
     val instruction: String? = null,
 )

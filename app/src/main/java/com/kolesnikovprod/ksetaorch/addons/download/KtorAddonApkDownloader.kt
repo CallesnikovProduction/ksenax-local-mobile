@@ -135,6 +135,11 @@ internal class KtorAddonApkDownloader(
  */
 internal typealias AddonDownloadUrlPolicy = AddonRemoteUrlPolicy
 
+/**
+ * Результат транспортной стадии APK download до Android archive verification.
+ *
+ * @since 0.4
+ */
 internal sealed interface AddonDownloadResult {
     data class Downloaded(
         val file: File,

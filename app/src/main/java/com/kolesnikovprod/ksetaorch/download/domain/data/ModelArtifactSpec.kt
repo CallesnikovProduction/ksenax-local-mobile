@@ -1,6 +1,6 @@
 package com.kolesnikovprod.ksetaorch.download.domain.data
 
-val SHA256_REGEX_PATTERN = Regex("^[a-fA-F0-9]{64}$")
+internal val SHA256_REGEX_PATTERN = Regex("^[a-fA-F0-9]{64}$")
 
 /**
  * Спецификация одного скачиваемого runtime-артефакта модели.

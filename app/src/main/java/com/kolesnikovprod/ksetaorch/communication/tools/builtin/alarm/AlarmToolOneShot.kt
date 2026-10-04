@@ -54,7 +54,7 @@ interface AlarmToolOneShot : KsenaxOneShotDeclaration {
     object ClearAll : AlarmToolOneShot {
         override val codeName: String = "alarm_clear_all"
         override val description: String =
-            "Requests deletion of all Android Clock alarms. Normal Android apps cannot actually delete all system alarms."
+            "Requests dismissal of all alarms through Android AlarmClock. Support depends on the installed Clock app."
         override val parameters: String? = null
     }
 }

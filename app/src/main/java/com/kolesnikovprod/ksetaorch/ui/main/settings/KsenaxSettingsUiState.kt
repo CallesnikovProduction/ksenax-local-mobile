@@ -75,6 +75,9 @@ enum class KsenaxContextWindow(
 
 /**
  * Страницы настроек. По ним навигация может безболезненно открыть нужный маршрут.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
  */
 enum class KsenaxSettingsPage {
     Main,

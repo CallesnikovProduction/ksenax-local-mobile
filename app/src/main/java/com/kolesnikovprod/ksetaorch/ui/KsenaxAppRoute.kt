@@ -12,10 +12,11 @@ import androidx.navigation.navArgument
 
 import com.kolesnikovprod.ksetaorch.KsenaxAndroidApplication
 import com.kolesnikovprod.ksetaorch.addons.presentation.AddonCatalogViewModel
-import com.kolesnikovprod.ksetaorch.ui.helpers.currentResponseModel
-import com.kolesnikovprod.ksetaorch.ui.helpers.rememberGeneralBackStackEntry
+import com.kolesnikovprod.ksetaorch.ui.helpers.clearAgenticChatLaunchState
+import com.kolesnikovprod.ksetaorch.ui.helpers.clearBasicChatLaunchState
+import com.kolesnikovprod.ksetaorch.ui.helpers.rememberMainBackStackEntry
 import com.kolesnikovprod.ksetaorch.ui.helpers.rememberKsenaxApplication
-import com.kolesnikovprod.ksetaorch.ui.helpers.settingsStringPageNameToEnum
+import com.kolesnikovprod.ksetaorch.ui.helpers.resolveSettingsPage
 import com.kolesnikovprod.ksetaorch.ui.main.chat.KsenaxBasicChatScreen
 import com.kolesnikovprod.ksetaorch.ui.main.chat.KsenaxAgenticChatScreen
 import com.kolesnikovprod.ksetaorch.ui.main.chat.KsenaxTemporaricChatScreen
@@ -23,7 +24,6 @@ import com.kolesnikovprod.ksetaorch.ui.main.KsenaxMainScreen
 import com.kolesnikovprod.ksetaorch.ui.main.model.ChatMode
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxAppSettingsRoute
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSettingsPage
-import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSupportedTextModel
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicChatViewModel
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.agentic.KsenaxAgenticChatViewModel
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.temporaric.KsenaxTemporaricChatViewModel
@@ -54,7 +54,7 @@ import com.kolesnikovprod.ksetaorch.ui.viewmodels.KsenaxMainViewModel
  * @author Stephan Kolesnikov
  */
 @Composable
-fun KsenaxAppRoute(ksenaxVersion: Float) {
+fun KsenaxAppRoute(ksenaxVersion: String) {
 
     /**
      * Создаёт контроллер навигации и сохраняет его между рекомпозициями.
@@ -123,7 +123,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                 ),
             )
 
-            val responseModel = mainViewModel.currentResponseModel()
+            val responseModel = mainViewModel.responseModelForChatRoute()
 
             // Для временного чата уже создалась модель.
             // Нам не нужна индексация чата в репозитории, поэтому уже имеется «сырой диалог»
@@ -177,7 +177,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                     navController.currentBackStackEntry
                         ?.savedStateHandle // бери текущую запись -> savedStateHandle
                         ?.set(             // положи туда initMsg по соответствующему ключу
-                            KsenaxRoutes.Chat.BASIC_INITIAL_MESSAGE_STATE_KEY,
+                            KsenaxRoutes.Chat.StateKey.BASIC_INITIAL_MESSAGE,
                             initialMessage,
                         )
                     navController.navigate(KsenaxRoutes.Chat.RouteBuilder.basic())
@@ -187,23 +187,23 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                         ?.savedStateHandle
                         ?.apply {
                             set(
-                                KsenaxRoutes.Chat.AGENTIC_INITIAL_MESSAGE_STATE_KEY,
+                                KsenaxRoutes.Chat.StateKey.AGENTIC_INITIAL_MESSAGE,
                                 initialMessage,
                             )
                             // Защита от старого URI, который мог бы протечь случайно,
                             // когда создавался предыдущий агентный чат.
                             if (workspaceUri == null) {
                                 remove<String>(
-                                    KsenaxRoutes.Chat.AGENTIC_WORKSPACE_URI_STATE_KEY
+                                    KsenaxRoutes.Chat.StateKey.AGENTIC_WORKSPACE_URI
                                 )
                             } else {
                                 set(
-                                    KsenaxRoutes.Chat.AGENTIC_WORKSPACE_URI_STATE_KEY,
+                                    KsenaxRoutes.Chat.StateKey.AGENTIC_WORKSPACE_URI,
                                     workspaceUri,
                                 )
                             }
                             set(
-                                KsenaxRoutes.Chat.AGENTIC_WORKSPACE_PATH_STATE_KEY,
+                                KsenaxRoutes.Chat.StateKey.AGENTIC_WORKSPACE_PATH,
                                 workspacePath,
                             )
                         }
@@ -215,7 +215,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                     initialMessage
                         .takeIf(String::isNotBlank)
                         ?.let(temporaricChatViewModel::onMessageFromMain)
-                    navController.navigate(KsenaxRoutes.Chat.TEMPORARIC_PATTERN) {
+                    navController.navigate(KsenaxRoutes.Chat.Pattern.TEMPORARIC_CONVERSATION) {
                         // защита, чтобы не плодить экраны поверх
                         launchSingleTop = true
                     }
@@ -253,7 +253,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             * */
 
             // Получаем предыдущий entry (MainViewModel)
-            val generalBackStackEntry = rememberGeneralBackStackEntry(
+            val mainBackStackEntry = rememberMainBackStackEntry(
                 navController = navController,
                 currentBackStackEntry = backStackEntry,
             )
@@ -263,18 +263,18 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             //
             // (* - слово "создавалась" используется в косвенном смысле)
             val mainViewModel: KsenaxMainViewModel = viewModel(
-                viewModelStoreOwner = generalBackStackEntry,
+                viewModelStoreOwner = mainBackStackEntry,
             )
 
             // достаётся имя стартовой страницы
             val initialPageName = backStackEntry.arguments
                 ?.getString(KsenaxRoutes.Settings.PAGE_ARGUMENT)
 
-            val enumedInitialPage = settingsStringPageNameToEnum(initialPageName)
+            val initialSettingsPage = resolveSettingsPage(initialPageName)
 
             KsenaxAppSettingsRoute(
                 viewModel    = mainViewModel,      // общий MainViewModel
-                initialPage  = enumedInitialPage,  // какую страницу настроек открыть первой
+                initialPage  = initialSettingsPage, // какую страницу настроек открыть первой
                 onExitToMain = {                   // что делать при выходе?
                     navController.popBackStack(
                         route     = KsenaxRoutes.GENERAL,
@@ -303,25 +303,25 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
          * ╚═══════════════════════════════════════════════
          */
         composable(
-            KsenaxRoutes.Chat.TEMPORARIC_PATTERN,
+            KsenaxRoutes.Chat.Pattern.TEMPORARIC_CONVERSATION,
         ) { backStackEntry ->
             // ручной DI
             val application = rememberKsenaxApplication()
 
             // возможность вернуться обратно
-            val generalBackStackEntry = rememberGeneralBackStackEntry(
+            val mainBackStackEntry = rememberMainBackStackEntry(
                 navController = navController,
                 currentBackStackEntry = backStackEntry,
             )
 
             val mainViewModel: KsenaxMainViewModel = viewModel(
-                viewModelStoreOwner = generalBackStackEntry,
+                viewModelStoreOwner = mainBackStackEntry,
             )
 
-            val responseModel = mainViewModel.currentResponseModel()
+            val responseModel = mainViewModel.responseModelForChatRoute()
             val temporaricChatViewModel: KsenaxTemporaricChatViewModel =
                 viewModel(
-                    viewModelStoreOwner = generalBackStackEntry,
+                    viewModelStoreOwner = mainBackStackEntry,
                     key                 = "temporaric-${responseModel.name}",
                     factory             = KsenaxTemporaricChatViewModel.Factory(
                         application   = application,
@@ -360,7 +360,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
          * ╚═══════════════════════════════════════════════
          */
         composable(
-            route = KsenaxRoutes.Chat.BASIC_PATTERN,
+            route = KsenaxRoutes.Chat.Pattern.BASIC_CONVERSATION,
             arguments = listOf(
                 navArgument(KsenaxRoutes.Chat.CHAT_ID_ARGUMENT) {
                     type         = NavType.LongType
@@ -376,17 +376,18 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             val initialChatId = chatIdArgument
                 .takeUnless { chatId -> chatId == KsenaxRoutes.Chat.NEW_CHAT_ID }
 
-            val generalBackStackEntry = rememberGeneralBackStackEntry(
+            val mainBackStackEntry = rememberMainBackStackEntry(
                 navController = navController,
                 currentBackStackEntry = backStackEntry,
             )
 
             val mainViewModel: KsenaxMainViewModel = viewModel(
-                viewModelStoreOwner = generalBackStackEntry,
+                viewModelStoreOwner = mainBackStackEntry,
             )
-            val responseModel = mainViewModel.currentResponseModel()
+            val responseModel = mainViewModel.responseModelForChatRoute()
 
             val basicChatViewModel: KsenaxBasicChatViewModel = viewModel(
+                viewModelStoreOwner = backStackEntry,
                 factory = KsenaxBasicChatViewModel.Factory(
                     application = application,
                     initialChatId = initialChatId,
@@ -396,8 +397,8 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
 
             // забирается первое сообщение, которое уже будет
             // передаваться конкретно на экран стандартного чата.
-            val initialMessage = generalBackStackEntry.savedStateHandle
-                .get<String>(KsenaxRoutes.Chat.BASIC_INITIAL_MESSAGE_STATE_KEY)
+            val initialMessage = mainBackStackEntry.savedStateHandle
+                .get<String>(KsenaxRoutes.Chat.StateKey.BASIC_INITIAL_MESSAGE)
 
             KsenaxBasicChatScreen(
                 viewModel = basicChatViewModel,
@@ -405,10 +406,10 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                 initialMessage = initialMessage,
                 onInitialMessageCommitted = { committedMessage ->
                     mainViewModel.onBasicMessageCommitted(committedMessage)
-                    generalBackStackEntry.savedStateHandle
-                        .remove<String>(KsenaxRoutes.Chat.BASIC_INITIAL_MESSAGE_STATE_KEY)
+                    mainBackStackEntry.savedStateHandle.clearBasicChatLaunchState()
                 },
                 onAgenticChatSelected = { chatId ->
+                    mainBackStackEntry.savedStateHandle.clearBasicChatLaunchState()
                     navController.navigate(KsenaxRoutes.Chat.RouteBuilder.agentic(chatId)) {
                         popUpTo(KsenaxRoutes.GENERAL)
                     }
@@ -419,10 +420,12 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                 onTemporaricModeRequested = {
                     mainViewModel.onModeSelected(ChatMode.Temporaric)
                 },
-                onSettingsRequested = openSettings,
+                onSettingsRequested = { page ->
+                    mainBackStackEntry.savedStateHandle.clearBasicChatLaunchState()
+                    openSettings(page)
+                },
                 onExitToMain = {
-                    generalBackStackEntry.savedStateHandle
-                        .remove<String>(KsenaxRoutes.Chat.BASIC_INITIAL_MESSAGE_STATE_KEY)
+                    mainBackStackEntry.savedStateHandle.clearBasicChatLaunchState()
                     navController.popBackStack(
                         route = KsenaxRoutes.GENERAL,
                         inclusive = false,
@@ -437,7 +440,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
          * ╚═══════════════════════════════════════════════
          */
         composable(
-            route = KsenaxRoutes.Chat.AGENTIC_PATTERN,
+            route = KsenaxRoutes.Chat.Pattern.AGENTIC_CONVERSATION,
             arguments = listOf(
                 navArgument(KsenaxRoutes.Chat.CHAT_ID_ARGUMENT) {
                     type = NavType.LongType
@@ -446,13 +449,13 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             ),
         ) { backStackEntry ->
             val application = rememberKsenaxApplication()
-            val generalBackStackEntry = rememberGeneralBackStackEntry(
+            val mainBackStackEntry = rememberMainBackStackEntry(
                 navController = navController,
                 currentBackStackEntry = backStackEntry,
             )
 
             val mainViewModel: KsenaxMainViewModel = viewModel(
-                viewModelStoreOwner = generalBackStackEntry,
+                viewModelStoreOwner = mainBackStackEntry,
             )
             val chatIdArgument = backStackEntry.arguments
                 ?.getLong(KsenaxRoutes.Chat.CHAT_ID_ARGUMENT)
@@ -460,26 +463,22 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
             val initialChatId = chatIdArgument
                 .takeUnless { it == KsenaxRoutes.Chat.NEW_CHAT_ID }
 
-            val savedState = generalBackStackEntry.savedStateHandle
-            val agenticResponseModel = KsenaxSupportedTextModel.Gemma
+            val mainSavedStateHandle = mainBackStackEntry.savedStateHandle
             val agenticChatViewModel: KsenaxAgenticChatViewModel = viewModel(
-                key = "agentic-work-$chatIdArgument",
+                viewModelStoreOwner = backStackEntry,
                 factory = KsenaxAgenticChatViewModel.Factory(
                     application = application,
                     initialChatId = initialChatId,
-                    initialWorkspaceTreeUri = savedState.get<String>(
-                        KsenaxRoutes.Chat.AGENTIC_WORKSPACE_URI_STATE_KEY,
+                    initialWorkspaceTreeUri = mainSavedStateHandle.get<String>(
+                        KsenaxRoutes.Chat.StateKey.AGENTIC_WORKSPACE_URI,
                     ),
-                    initialWorkspaceDisplayPath = savedState.get<String>(
-                        KsenaxRoutes.Chat.AGENTIC_WORKSPACE_PATH_STATE_KEY,
+                    initialWorkspaceDisplayPath = mainSavedStateHandle.get<String>(
+                        KsenaxRoutes.Chat.StateKey.AGENTIC_WORKSPACE_PATH,
                     ).orEmpty(),
-                    // Новый agentic work pipeline: G4 планирует, FunctionGemma
-                    // компилирует атомарные действия.
-                    responseModel = agenticResponseModel,
                 ),
             )
-            val initialMessage = savedState.get<String>(
-                KsenaxRoutes.Chat.AGENTIC_INITIAL_MESSAGE_STATE_KEY,
+            val initialMessage = mainSavedStateHandle.get<String>(
+                KsenaxRoutes.Chat.StateKey.AGENTIC_INITIAL_MESSAGE,
             )
 
             KsenaxAgenticChatScreen(
@@ -488,9 +487,7 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                 initialMessage = initialMessage,
                 onInitialMessageCommitted = { committedMessage ->
                     mainViewModel.onAgenticMessageCommitted(committedMessage)
-                    savedState.remove<String>(
-                        KsenaxRoutes.Chat.AGENTIC_INITIAL_MESSAGE_STATE_KEY,
-                    )
+                    mainSavedStateHandle.clearAgenticChatLaunchState()
                 },
                 onBasicModeRequested = {
                     mainViewModel.onModeSelected(ChatMode.Basic)
@@ -499,21 +496,17 @@ fun KsenaxAppRoute(ksenaxVersion: Float) {
                     mainViewModel.onModeSelected(ChatMode.Temporaric)
                 },
                 onBasicChatSelected = { chatId ->
+                    mainSavedStateHandle.clearAgenticChatLaunchState()
                     navController.navigate(KsenaxRoutes.Chat.RouteBuilder.basic(chatId)) {
                         popUpTo(KsenaxRoutes.GENERAL)
                     }
                 },
-                onSettingsRequested = openSettings,
+                onSettingsRequested = { page ->
+                    mainSavedStateHandle.clearAgenticChatLaunchState()
+                    openSettings(page)
+                },
                 onExitToMain = {
-                    savedState.remove<String>(
-                        KsenaxRoutes.Chat.AGENTIC_INITIAL_MESSAGE_STATE_KEY,
-                    )
-                    savedState.remove<String>(
-                        KsenaxRoutes.Chat.AGENTIC_WORKSPACE_URI_STATE_KEY,
-                    )
-                    savedState.remove<String>(
-                        KsenaxRoutes.Chat.AGENTIC_WORKSPACE_PATH_STATE_KEY,
-                    )
+                    mainSavedStateHandle.clearAgenticChatLaunchState()
                     navController.popBackStack(
                         route = KsenaxRoutes.GENERAL,
                         inclusive = false,

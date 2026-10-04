@@ -5,6 +5,8 @@ import com.kolesnikovprod.ksetaorch.addons.registry.AddonCatalogMetadata
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonCompatibility
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonInstallArtifact
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonInstallationState
+import com.kolesnikovprod.ksetaorch.addons.registry.AddonManagementBlockReason
+import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistrySourceFailureKind
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistrySourceStatus
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonTrustState
@@ -110,6 +112,95 @@ class FileAddonLocalStoreTest {
 
             assertFalse(
                 layout.packageDirectory(PACKAGE_NAME).exists(),
+            )
+        }
+
+    @Test
+    fun offlineReconcilePreservesInstalledMetadataAndBanner() =
+        runBlocking {
+            val layout = AddonFileLayout(
+                temporaryFolder.newFolder("addons"),
+            )
+            val store = FileAddonLocalStore(
+                layout = layout,
+                ioDispatcher = Dispatchers.Unconfined,
+            )
+            val onlineAddon = installedAddon()
+            layout.temporaryBanner(
+                onlineAddon.addonId,
+                sha256 = SHA_256,
+            ).writeOwnedBytes("banner")
+            val onlineRecord = store.reconcile(
+                installedRegistryState(onlineAddon),
+            ).single()
+            val nextBannerSha256 = "B".repeat(64)
+            val updatedCatalogAddon = onlineAddon.copy(
+                catalogMetadata = requireNotNull(
+                    onlineAddon.catalogMetadata,
+                ).copy(
+                    bannerArtifact = AddonBannerArtifact(
+                        url = "https://example.invalid/new-banner.webp",
+                        sha256 = nextBannerSha256,
+                    ),
+                ),
+            )
+            val recordBeforeNewBannerDownload = store.reconcile(
+                installedRegistryState(updatedCatalogAddon),
+            ).single()
+            assertEquals(
+                SHA_256,
+                recordBeforeNewBannerDownload.bannerSha256,
+            )
+            assertTrue(
+                layout.installedBanner(PACKAGE_NAME, SHA_256).isFile,
+            )
+            assertFalse(
+                layout.installedBanner(
+                    PACKAGE_NAME,
+                    nextBannerSha256,
+                ).exists(),
+            )
+            val offlineAddon = onlineAddon.copy(
+                catalogMetadata = null,
+                compatibility = AddonCompatibility.Unknown(
+                    AddonCompatibility.UnknownReason.CATALOG_UNAVAILABLE,
+                ),
+                trust = AddonTrustState.CatalogUnavailable,
+                grantedHostCapabilities = emptySet(),
+                managementBlockReason =
+                    AddonManagementBlockReason.SOURCE_UNAVAILABLE,
+            )
+
+            val offlineRecord = store.reconcile(
+                AddonRegistryState(
+                    addons = listOf(offlineAddon),
+                    discoveryStatus = AddonRegistrySourceStatus.Fresh,
+                    catalogStatus = AddonRegistrySourceStatus.Unavailable(
+                        errorMessage = "offline",
+                        failureKind =
+                            AddonRegistrySourceFailureKind
+                                .NETWORK_UNAVAILABLE,
+                    ),
+                    isInitialized = true,
+                ),
+            ).single()
+
+            assertEquals(onlineRecord.displayName, offlineRecord.displayName)
+            assertEquals(
+                onlineRecord.shortDescription,
+                offlineRecord.shortDescription,
+            )
+            assertEquals(
+                onlineRecord.fullDescription,
+                offlineRecord.fullDescription,
+            )
+            assertEquals(
+                onlineRecord.repositoryUrl,
+                offlineRecord.repositoryUrl,
+            )
+            assertEquals(SHA_256, offlineRecord.bannerSha256)
+            assertTrue(
+                layout.installedBanner(PACKAGE_NAME, SHA_256).isFile,
             )
         }
 

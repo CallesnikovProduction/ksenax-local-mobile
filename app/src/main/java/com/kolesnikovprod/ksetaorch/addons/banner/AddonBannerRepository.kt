@@ -32,7 +32,7 @@ internal fun interface AddonBannerRepository {
         addonId: AddonId,
         packageName: String,
         isInstalled: Boolean,
-        bannerUrl: String,
+        bannerUrl: String?,
         expectedSha256: String,
     ): AddonBannerLoadResult
 }
@@ -73,12 +73,36 @@ internal class KtorVerifiedAddonBannerRepository(
         addonId: AddonId,
         packageName: String,
         isInstalled: Boolean,
-        bannerUrl: String,
+        bannerUrl: String?,
         expectedSha256: String,
     ): AddonBannerLoadResult = withContext(ioDispatcher) {
+        try {
+            loadOnIo(
+                addonId = addonId,
+                packageName = packageName,
+                isInstalled = isInstalled,
+                bannerUrl = bannerUrl,
+                expectedSha256 = expectedSha256,
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            AddonBannerLoadResult.Failed(
+                AddonBannerFailure.LOCAL_ASSET_FAILURE,
+            )
+        }
+    }
+
+    private suspend fun loadOnIo(
+        addonId: AddonId,
+        packageName: String,
+        isInstalled: Boolean,
+        bannerUrl: String?,
+        expectedSha256: String,
+    ): AddonBannerLoadResult {
         val normalizedSha256 = expectedSha256.normalizeSha256()
         if (!SHA_256_REGEX.matches(normalizedSha256)) {
-            return@withContext AddonBannerLoadResult.Failed(
+            return AddonBannerLoadResult.Failed(
                 AddonBannerFailure.INVALID_EXPECTATION,
             )
         }
@@ -97,10 +121,16 @@ internal class KtorVerifiedAddonBannerRepository(
 
         destination.readVerifiedBitmap(normalizedSha256)
             ?.let { bitmap ->
-                return@withContext AddonBannerLoadResult.Ready(bitmap)
+                return AddonBannerLoadResult.Ready(bitmap)
             }
 
-        when (
+        if (bannerUrl.isNullOrBlank()) {
+            return AddonBannerLoadResult.Failed(
+                AddonBannerFailure.LOCAL_ASSET_UNAVAILABLE,
+            )
+        }
+
+        return when (
             val result = fileDownloader.download(
                 AddonRemoteFileRequest(
                     rawUrl = bannerUrl,
@@ -175,6 +205,9 @@ internal class KtorVerifiedAddonBannerRepository(
         )?.takeIf { bitmap ->
             bitmap.width == AddonBannerContract.WIDTH_PIXELS &&
                 bitmap.height == AddonBannerContract.HEIGHT_PIXELS
+        } ?: run {
+            delete()
+            null
         }
     }
 
@@ -280,6 +313,8 @@ internal sealed interface AddonBannerLoadResult {
  */
 internal enum class AddonBannerFailure {
     INVALID_EXPECTATION,
+    LOCAL_ASSET_UNAVAILABLE,
+    LOCAL_ASSET_FAILURE,
     UNSAFE_URL,
     SIZE_LIMIT_EXCEEDED,
     DOWNLOAD_FAILED,

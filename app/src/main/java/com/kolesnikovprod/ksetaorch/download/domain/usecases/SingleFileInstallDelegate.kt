@@ -4,6 +4,7 @@ import android.content.Context
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxDownloadGateway
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
 import com.kolesnikovprod.ksetaorch.download.domain.DownloadIdPreferencesStore
+import com.kolesnikovprod.ksetaorch.download.domain.FileTreeDeleter
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadPolicy
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
@@ -70,9 +71,9 @@ internal class SingleFileInstallDelegate(
      *
      * По сути, позволяет вызывать:
      * ```kotlin
-     * preferencesStore.save(id)
+     * preferencesStore.getOrCreate { enqueue() }
      * preferencesStore.get()
-     * preferencesStore.clear()
+     * preferencesStore.clearIfMatches(id)
      * ```
      *
      * @since 0.2
@@ -94,29 +95,41 @@ internal class SingleFileInstallDelegate(
     override fun startDownloadAndSave(
         policy: KsenaxDownloadPolicy
     ): Long {
-        downloadGateway.allowOverMeteredNetwork = policy.allowOverMeteredNetwork
-        downloadGateway.allowOverRoaming        = policy.allowOverRoaming
+        return downloadIdPreferencesStore.getOrCreate {
+            downloadGateway.allowOverMeteredNetwork = policy.allowOverMeteredNetwork
+            downloadGateway.allowOverRoaming        = policy.allowOverRoaming
 
-        return downloadGateway.enqueue().also(downloadIdPreferencesStore::save)
+            downloadGateway.enqueue()
+        }
     }
 
     override fun getSavedDownloadId(): Long = downloadIdPreferencesStore.get()
 
     override fun cancelDownload(downloadId: Long) {
-        if (downloadId != NO_DOWNLOAD_ID) {
-            downloadGateway.cancelBy(downloadId)
-        }
+        if (downloadId == NO_DOWNLOAD_ID) return
 
-        clearArtifacts()
+        downloadGateway.cancelBy(downloadId)
+        clearArtifactsIfOwnedBy(downloadId)
     }
 
     override fun clearArtifacts() {
-        clearSavedDownloadId()
-        deleteLocalArtifacts()
+        downloadIdPreferencesStore.clearWithCleanup {
+            deleteLocalArtifacts()
+        }
+    }
+
+    override fun clearArtifactsIfOwnedBy(downloadId: Long): Boolean {
+        return downloadIdPreferencesStore.clearWithCleanupIfMatches(downloadId) {
+            deleteLocalArtifacts()
+        }
     }
 
     override fun clearSavedDownloadId() {
         downloadIdPreferencesStore.clear()
+    }
+
+    override fun clearSavedDownloadIdIfOwnedBy(downloadId: Long): Boolean {
+        return downloadIdPreferencesStore.clearIfMatches(downloadId)
     }
 
     override fun deleteLocalArtifacts(): Boolean {
@@ -168,10 +181,7 @@ internal class SingleFileInstallDelegate(
     fun clearSavedVoices() {
         val savedVoicesDirectory = downloadGateway.getSavedVoicesDirectory()
 
-        if (savedVoicesDirectory.exists()) {
-            savedVoicesDirectory.deleteRecursively()
-        }
-
+        FileTreeDeleter.deleteIfExists(savedVoicesDirectory)
         savedVoicesDirectory.mkdirs()
     }
 }

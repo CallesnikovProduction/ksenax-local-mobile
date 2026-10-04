@@ -3,6 +3,12 @@ package com.kolesnikovprod.ksetaorch.communication.tools.builtin.calendar
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Проверяет локальную нормализацию даты и времени события.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class CalendarEventUserPromptDraftTest {
 
     @Test

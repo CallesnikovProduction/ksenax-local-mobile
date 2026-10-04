@@ -73,18 +73,60 @@ interface KsenaxModelInstallUseCase {
     fun cancelDownload(downloadId: Long)
 
     /**
-     * Очищает сохраненный `downloadId` и локальные артефакты.
+     * Безусловно очищает сохранённый `downloadId` и локальные артефакты.
+     * Для асинхронных terminal callback-ов следует использовать
+     * [clearArtifactsIfOwnedBy].
      *
      * @since 0.2
      */
     fun clearArtifacts()
 
     /**
-     * Удаляет только сохраненный `downloadId`.
+     * Очищает локальные артефакты и сохранённый id только если текущим
+     * владельцем установки всё ещё является [downloadId].
+     *
+     * Метод нужен для запоздалых observer/worker-ов: завершение старой задачи
+     * не должно удалить файлы или id более новой загрузки.
+     * Реализация с несколькими экземплярами use case обязана переопределить
+     * метод атомарно на общем target-specific хранилище. Default оставлен
+     * только для source compatibility простых однопоточных реализаций.
+     *
+     * @return `true`, если id совпал и очистка принадлежала вызывающему;
+     * `false`, если задача уже была отменена или заменена.
+     *
+     * @since 0.4
+     */
+    fun clearArtifactsIfOwnedBy(downloadId: Long): Boolean {
+        if (getSavedDownloadId() != downloadId) return false
+
+        clearArtifacts()
+        return true
+    }
+
+    /**
+     * Безусловно удаляет сохранённый `downloadId`.
+     * Для асинхронной финализации следует использовать
+     * [clearSavedDownloadIdIfOwnedBy].
      *
      * @since 0.2
      */
     fun clearSavedDownloadId()
+
+    /**
+     * Удаляет сохранённый id только если он всё ещё равен [downloadId].
+     * Production-реализация должна переопределить проверку и удаление как одну
+     * атомарную операцию общего target-specific хранилища.
+     *
+     * @return `true`, если вызывающий владел сохранённым id.
+     *
+     * @since 0.4
+     */
+    fun clearSavedDownloadIdIfOwnedBy(downloadId: Long): Boolean {
+        if (getSavedDownloadId() != downloadId) return false
+
+        clearSavedDownloadId()
+        return true
+    }
 
     /**
      * Удаляет локальные файлы/директории установки, не меняя сохранённый `downloadId`.

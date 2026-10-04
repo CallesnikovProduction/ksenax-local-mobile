@@ -21,10 +21,11 @@ import com.kolesnikovprod.ksetaorch.ui.theme.KsenaxThemeVisuals
 
 @Composable
 internal fun SettingsTopScrollShadow(
-    strength: Float,
+    strengthProvider: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     Canvas(modifier = modifier) {
+        val strength = strengthProvider().coerceIn(0f, 1f)
         if (strength <= 0f) return@Canvas
 
         drawRect(

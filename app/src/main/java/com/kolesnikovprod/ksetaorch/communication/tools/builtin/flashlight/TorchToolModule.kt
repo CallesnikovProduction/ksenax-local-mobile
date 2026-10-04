@@ -1,21 +1,19 @@
 package com.kolesnikovprod.ksetaorch.communication.tools.builtin.flashlight
 
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
-import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxActionPlanningMode
+import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxDirectActionRoute
+import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxActionInputDraft
+import java.time.ZonedDateTime
 import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxOneShotActionKit
 import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxWorkActionSpec
-import com.kolesnikovprod.ksetaorch.communication.work.oneshot.KsenaxOneShotKeywords
 import com.kolesnikovprod.ksetaorch.communication.work.oneshot.KsenaxOneShotToolProtocol
-import com.kolesnikovprod.ksetaorch.communication.work.planning.KsenaxWorkPlanStep
-import java.util.Locale
 
 /**
  * OneShot-kit фонарика для короткого FunctionGemma prompt-а.
  *
- * В agentic-режиме фонарик не планируется через G4: runtime узнаёт его по
- * ключевым словам, подсказывает целевую FG function и всё равно пропускает
- * команду через FunctionGemma OneShot.
+ * Фонарик доступен как быстрый direct-action и как атомарный шаг G4-плана.
+ * `torch_on`, `torch_off` или `torch_toggle` выбирает FunctionGemma.
+ * Локальная проверка не допускает противоречия явной команде включить/выключить.
  *
  * @property executor исполнитель `torch_on`, `torch_off` и `torch_toggle`.
  *
@@ -30,8 +28,13 @@ class TorchToolModule(
 
     override val namespace: String = "system"
 
-    override val planningMode: KsenaxActionPlanningMode =
-        KsenaxActionPlanningMode.NonPlanable
+    override val supportsFastPath = true
+
+    override val directRoute: KsenaxDirectActionRoute =
+        KsenaxDirectActionRoute(
+            description = "one flashlight on, off, or toggle command",
+            keywords = TorchOneShotKeywords,
+        )
 
     override val actionSpecs: List<KsenaxWorkActionSpec> =
         listOf(
@@ -39,61 +42,29 @@ class TorchToolModule(
                 name = TorchToolOneShot.On.codeName,
                 description = "Turns on the device flashlight.",
                 inputHint = "No input object is needed.",
-                examples = listOf("Включи фонарик -> torch_on"),
             ),
             KsenaxWorkActionSpec(
                 name = TorchToolOneShot.Off.codeName,
                 description = "Turns off the device flashlight.",
                 inputHint = "No input object is needed.",
-                examples = listOf("Выключи фонарик -> torch_off"),
             ),
             KsenaxWorkActionSpec(
                 name = TorchToolOneShot.Toggle.codeName,
                 description = "Toggles the device flashlight when the user does not say on or off.",
                 inputHint = "No input object is needed.",
-                examples = listOf("Фонарик -> torch_toggle"),
             ),
         )
 
-    override val keywords: KsenaxOneShotKeywords = TorchOneShotKeywords
-
     override val protocol: KsenaxOneShotToolProtocol = TorchOneShotProtocol
 
-    override fun preferredDirectActionName(userMessage: String): String? {
-        val text = userMessage
-            .lowercase(Locale.ROOT)
-            .replace(Regex("\\s+"), " ")
-            .trim()
-        return when {
-            "выключ" in text ||
-                "отключ" in text ||
-                "погас" in text ||
-                "убери свет" in text ||
-                "потуш" in text ->
-                TorchToolOneShot.Off.codeName
-            "включ" in text ||
-                "зажг" in text ||
-                "вруби" in text ||
-                "дай свет" in text ||
-                "посвет" in text ->
-                TorchToolOneShot.On.codeName
-            text == "фонарик" ||
-                text == "фонарь" ||
-                "переключ" in text ->
-                TorchToolOneShot.Toggle.codeName
-            else -> null
+    override fun buildFastActionDraft(userMessage: String, actionName: String, now: ZonedDateTime): KsenaxActionInputDraft? {
+        val text = userMessage.lowercase().trim(' ', '.', ',', '!', '?')
+        val expected = when {
+            Regex("выключ|погаси|погасить|отключ").containsMatchIn(text) -> TorchToolOneShot.Off.codeName
+            Regex("включ|зажги|зажечь").containsMatchIn(text) -> TorchToolOneShot.On.codeName
+            Regex("^(фонар\\p{L}*|flashlight|torch)$").matches(text) -> TorchToolOneShot.Toggle.codeName
+            else -> return null
         }
+        return KsenaxActionInputDraft(expectedActionName = expected, instruction = userMessage)
     }
-
-    override fun resolveExecutableCall(
-        userMessage: String,
-        step: KsenaxWorkPlanStep,
-        compiledCall: KsenaxToolCall,
-    ): KsenaxToolCall =
-        if (supportsAction(step.actionName)) {
-            compiledCall.copy(name = step.actionName)
-        } else {
-            compiledCall
-        }
-
 }

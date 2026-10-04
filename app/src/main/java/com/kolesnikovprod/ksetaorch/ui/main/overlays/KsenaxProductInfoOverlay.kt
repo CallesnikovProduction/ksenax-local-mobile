@@ -34,7 +34,7 @@ fun KsenaxProductInfoOverlay(
     theme: KsenaxThemeVisuals,
     isVisible: Boolean,
     onDismiss: () -> Unit,
-    currentVersionOfApplication: Float,
+    currentVersionOfApplication: String,
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(

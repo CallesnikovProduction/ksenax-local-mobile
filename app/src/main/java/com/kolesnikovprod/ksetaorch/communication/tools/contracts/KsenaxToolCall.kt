@@ -8,7 +8,7 @@ package com.kolesnikovprod.ksetaorch.communication.tools.contracts
  * подтверждение и только потом выполнить действие.
  *
  * @property id id конкретного вызова. Нужен для связи call-а с результатом.
- * @property name имя tool-а из [KsenaxToolDefinition.name].
+ * @property name стабильное кодовое имя атомарного действия.
  * @property arguments JSON-object с аргументами конкретного вызова.
  * @property requiresConfirmation требует ли этот конкретный вызов подтверждения
  *           пользователя.

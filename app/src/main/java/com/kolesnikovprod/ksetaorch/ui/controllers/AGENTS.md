@@ -16,10 +16,19 @@
 
 ### `KsenaxAgenticWorkController`
 
-Инициализирует SAF workspace marker-файлом `there.ksenaxzone` и собирает
-новый agentic work runtime вокруг того же `KsenaxTextFileResolver`.
-Внутри runtime G4 планирует шаги, FunctionGemma компилирует атомарные
-one-shot actions, а Android executor-ы выполняют уже разобранные команды.
+По отдельной команде инициализирует SAF workspace marker-файлом
+`there.ksenaxzone` и собирает agentic work runtime. Создание runtime не
+открывает workspace: заметки получают `KsenaxTextFileResolver` лениво при
+первом файловом действии. Поэтому проверка моделей и быстрые системные действия
+не зависят от доступности каталога заметок.
+
+Внутри runtime FunctionGemma предлагает конкретную функцию, планирование,
+уточнение или отказ через native functions. Keywords не выбирают kit.
+На planned-пути G4 строит
+план, после чего каждый шаг отдельно компилирует FunctionGemma. Android
+executor-ы получают только разобранные и проверенные команды.
+Контроллер пишет в Android Log только стадии, имя функции, latency и категорию
+результата — без текста UP, аргументов и содержимого заметок.
 
 Контроллер не хранит выбранную директорию. `treeUri` и отображаемый путь
 принадлежат Room-записи Agentic-чата и передаются при создании runtime.

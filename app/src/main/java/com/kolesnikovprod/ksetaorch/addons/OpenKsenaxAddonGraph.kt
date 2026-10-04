@@ -38,8 +38,8 @@ import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryRefreshMode
 import com.kolesnikovprod.ksetaorch.addons.registry.DefaultAddonRegistry
 import com.kolesnikovprod.ksetaorch.addons.remote.KtorAddonRemoteFileDownloader
 import com.kolesnikovprod.ksetaorch.addons.storage.AddonFileLayout
-import com.kolesnikovprod.ksetaorch.addons.storage.AddonLocalStore
 import com.kolesnikovprod.ksetaorch.addons.storage.FileAddonLocalStore
+import com.kolesnikovprod.ksetaorch.addons.storage.contract.AddonLocalStore
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelSession
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android

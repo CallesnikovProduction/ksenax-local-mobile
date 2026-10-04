@@ -55,10 +55,6 @@ fun AppSettingsScreen(
     val shadowRevealDistancePx = with(LocalDensity.current) {
         36.dp.toPx()
     }
-    val topShadowStrength = (
-        scrollState.value / shadowRevealDistancePx
-    ).coerceIn(0f, 1f)
-
     Box(modifier = modifier.fillMaxSize()) {
         KsenaxMainBackground(
             theme = theme,
@@ -299,7 +295,10 @@ fun AppSettingsScreen(
                 }
 
                 SettingsTopScrollShadow(
-                    strength = topShadowStrength,
+                    strengthProvider = {
+                        (scrollState.value / shadowRevealDistancePx)
+                            .coerceIn(0f, 1f)
+                    },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()

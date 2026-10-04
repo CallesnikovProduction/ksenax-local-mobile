@@ -4,6 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Проверяет короткие alarm-declarations и формат ответа FunctionGemma.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class AlarmOneShotProtocolTest {
 
     @Test

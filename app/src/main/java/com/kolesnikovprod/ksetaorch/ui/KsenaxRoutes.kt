@@ -2,10 +2,10 @@ package com.kolesnikovprod.ksetaorch.ui
 
 
 /**
- * Одиночка, который централизует **названия** маршрутов, **маршрутные паттерны**
- * для Navigation Compose, **названия маршрутных аргументов**, **значения-заглушки**,
- * **ключи [androidx.lifecycle.SavedStateHandle]**, **builder-функции** для реальных
- * маршрутных строк.
+ * Единый контракт маршрутов корневого Navigation Compose-графа.
+ *
+ * Объект хранит route-patterns, имена аргументов, sentinel-значения,
+ * ключи временного navigation-state и функции построения destination route.
  *
  * @since 0.2
  * @author Stephan Kolesnikov
@@ -22,21 +22,29 @@ object KsenaxRoutes {
 
     /**
      * Контракт меню настроек.
+     *
+     * @since 0.2
      */
     object Settings {
 
         /**
          * Имя аргумента внутри маршрута.
+         *
+         * @since 0.2
          */
         const val PAGE_ARGUMENT = "page"
 
         /**
          * Шаблон маршрута, который регистрируется в [androidx.navigation.compose.NavHost].
+         *
+         * @since 0.2
          */
         const val PATTERN = "settings/{$PAGE_ARGUMENT}"
 
         /**
-         * Реальный рабочий маршрут по странице.
+         * Возвращает destination route для страницы с именем [pageName].
+         *
+         * @since 0.2
          */
         fun page(pageName: String): String = "settings/$pageName"
     }
@@ -73,28 +81,22 @@ object KsenaxRoutes {
         const val NEW_CHAT_ID = -1L
 
         /**
-         * Контракт ключей временного состояния, которое передаётся между
-         * экранами через [androidx.lifecycle.SavedStateHandle].
+         * Ключи одноразового состояния запуска чата, которое передаётся через
+         * [androidx.lifecycle.SavedStateHandle] главного back-stack entry.
          *
-         * Нужно для удобства парсинга и устранения проблем со спецсимволами.
-         * @since 0.2
+         * @since 0.4
          */
         object StateKey {
-            const val BASIC_INITIAL_MESSAGE            = "bic_chat_initial_message"
-            const val AGENTIC_INITIAL_MESSAGE          = "aic_chat_initial_message"
-            const val AGENTIC_WORKSPACE_URI_STATE_KEY  = "aic_chat_wkspace_uri"
-            const val AGENTIC_WORKSPACE_PATH_STATE_KEY = "aic_chat_wkspace_path"
-
+            const val BASIC_INITIAL_MESSAGE = "basic_chat_initial_message"
+            const val AGENTIC_INITIAL_MESSAGE = "agentic_chat_initial_message"
+            const val AGENTIC_WORKSPACE_URI = "agentic_chat_workspace_uri"
+            const val AGENTIC_WORKSPACE_PATH = "agentic_chat_workspace_path"
         }
-        const val BASIC_INITIAL_MESSAGE_STATE_KEY = "basic_chat_initial_message"
-        const val AGENTIC_INITIAL_MESSAGE_STATE_KEY = "agentic_chat_initial_message"
-        const val AGENTIC_WORKSPACE_URI_STATE_KEY = "agentic_chat_workspace_uri"
-        const val AGENTIC_WORKSPACE_PATH_STATE_KEY = "agentic_chat_workspace_path"
 
         /**
          * Шаблон для регистрации экрана, куда подставляется аргумент для чата.
          *
-         * Исключение: [TEMPORARIC_CONVERSATION] не имеет аргумента, потому что
+         * Исключение: [Pattern.TEMPORARIC_CONVERSATION] не имеет аргумента, потому что
          * он не должен индексироваться в принципе.
          *
          * @since 0.2
@@ -105,18 +107,28 @@ object KsenaxRoutes {
             const val TEMPORARIC_CONVERSATION = "chat/temporaric"
         }
 
-        const val BASIC_PATTERN = "chat/basic/{$CHAT_ID_ARGUMENT}"
-        const val AGENTIC_PATTERN = "chat/agentic/{$CHAT_ID_ARGUMENT}"
-        const val TEMPORARIC_PATTERN = "chat/temporaric"
-
         /**
-         * Помощник в построении маршрутов к классическому и агентному чату
+         * Строит destination routes к сохраняемым чатам.
+         *
+         * @since 0.2
          */
         object RouteBuilder {
+            /**
+             * Возвращает route Basic-чата. Отсутствующий [chatId] означает
+             * новый чат и кодируется через [NEW_CHAT_ID].
+             *
+             * @since 0.4
+             */
             fun basic(chatId: Long? = null): String {
                 return "chat/basic/${chatId ?: NEW_CHAT_ID}"
             }
 
+            /**
+             * Возвращает route Agentic-чата. Отсутствующий [chatId] означает
+             * новый чат и кодируется через [NEW_CHAT_ID].
+             *
+             * @since 0.4
+             */
             fun agentic(chatId: Long? = null): String {
                 return "chat/agentic/${chatId ?: NEW_CHAT_ID}"
             }

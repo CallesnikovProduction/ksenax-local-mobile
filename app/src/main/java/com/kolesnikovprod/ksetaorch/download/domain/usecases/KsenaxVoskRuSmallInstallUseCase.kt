@@ -4,6 +4,8 @@ import android.content.Context
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxDownloadGateway
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
 import com.kolesnikovprod.ksetaorch.download.domain.DownloadIdPreferencesStore
+import com.kolesnikovprod.ksetaorch.download.domain.FileIntegrityVerifier
+import com.kolesnikovprod.ksetaorch.download.domain.FileTreeDeleter
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadPolicy
@@ -51,41 +53,45 @@ class KsenaxVoskRuSmallInstallUseCase(
     override fun startDownloadAndSave(
         policy: KsenaxDownloadPolicy,
     ): Long {
-        deleteLocalArtifacts()
+        return downloadIdPreferencesStore.getOrCreate {
+            deleteLocalArtifacts()
 
-        downloadGateway.allowOverMeteredNetwork = policy.allowOverMeteredNetwork
-        downloadGateway.allowOverRoaming        = policy.allowOverRoaming
+            downloadGateway.allowOverMeteredNetwork = policy.allowOverMeteredNetwork
+            downloadGateway.allowOverRoaming        = policy.allowOverRoaming
 
-        val downloadId = downloadGateway.enqueue()
-
-        saveDownloadId(downloadId)
-
-        return downloadId
+            downloadGateway.enqueue()
+        }
     }
 
     override fun getSavedDownloadId(): Long {
         return downloadIdPreferencesStore.get()
     }
 
-    private fun saveDownloadId(downloadId: Long) {
-        downloadIdPreferencesStore.save(downloadId)
-    }
-
     override fun cancelDownload(downloadId: Long) {
-        if (downloadId != NO_DOWNLOAD_ID) {
-            downloadGateway.cancelBy(downloadId)
-        }
+        if (downloadId == NO_DOWNLOAD_ID) return
 
-        clearArtifacts()
+        downloadGateway.cancelBy(downloadId)
+        clearArtifactsIfOwnedBy(downloadId)
     }
 
     override fun clearArtifacts() {
-        clearSavedDownloadId()
-        deleteLocalArtifacts()
+        downloadIdPreferencesStore.clearWithCleanup {
+            deleteLocalArtifacts()
+        }
+    }
+
+    override fun clearArtifactsIfOwnedBy(downloadId: Long): Boolean {
+        return downloadIdPreferencesStore.clearWithCleanupIfMatches(downloadId) {
+            deleteLocalArtifacts()
+        }
     }
 
     override fun clearSavedDownloadId() {
         downloadIdPreferencesStore.clear()
+    }
+
+    override fun clearSavedDownloadIdIfOwnedBy(downloadId: Long): Boolean {
+        return downloadIdPreferencesStore.clearIfMatches(downloadId)
     }
 
     override fun deleteLocalArtifacts(): Boolean {
@@ -123,7 +129,7 @@ class KsenaxVoskRuSmallInstallUseCase(
                     ) ->
                         movePreparedTempModelToFinalDirectory()
 
-                    downloadGateway.getModelFile().isFile ->
+                    hasValidDownloadedArchive() ->
                         unzipArchiveToFinalDirectory()
 
                     else -> false
@@ -154,6 +160,14 @@ class KsenaxVoskRuSmallInstallUseCase(
 
     override fun getInstalledPath(): String {
         return downloadGateway.getModelDirectory().absolutePath
+    }
+
+    private fun hasValidDownloadedArchive(): Boolean {
+        return FileIntegrityVerifier.matches(
+            file = downloadGateway.getModelFile(),
+            expectedSizeBytes = VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_SIZE_BYTES,
+            expectedSha256 = VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_SHA256,
+        )
     }
 
     /**
@@ -235,13 +249,7 @@ class KsenaxVoskRuSmallInstallUseCase(
     }
 
     private fun deleteIfExists(file: File): Boolean {
-        if (!file.exists()) return true
-
-        return if (file.isDirectory) {
-            file.deleteRecursively()
-        } else {
-            file.delete()
-        }
+        return FileTreeDeleter.deleteIfExists(file)
     }
 
     /**

@@ -11,6 +11,9 @@ import java.util.Locale
  * G4 остаётся планировщиком, но дата/время — слишком критичные поля, чтобы
  * полностью зависеть от одного model output. Если planner не передал start,
  * calendar-kit пробует восстановить его из исходного пользовательского текста.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
  */
 internal object CalendarEventUserPromptDraft {
 

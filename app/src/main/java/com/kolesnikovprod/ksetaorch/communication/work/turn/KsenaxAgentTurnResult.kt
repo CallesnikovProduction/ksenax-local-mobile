@@ -32,11 +32,6 @@ sealed interface KsenaxAgentTurnResult {
         val plan: KsenaxWorkPlan.Clarification? = null,
     ) : KsenaxAgentTurnResult
 
-    data class AssistantMessage(
-        val message: String,
-        val plan: KsenaxWorkPlan.AssistantMessage? = null,
-    ) : KsenaxAgentTurnResult
-
     data class ModelFailure(
         val reason: String,
         val rawText: String?,

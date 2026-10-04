@@ -6,6 +6,7 @@ import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Bundle
 import androidx.core.content.pm.PackageInfoCompat
+import com.kolesnikovprod.ksetaorch.addons.identity.AddonIdentityPolicy
 import dev.openksenax.addons.contract.AddonExecutionModel
 import dev.openksenax.addons.contract.AddonId
 import dev.openksenax.addons.contract.AddonManifestContract
@@ -117,6 +118,15 @@ class PackageManagerAddonDiscovery(
         val serviceClassName = serviceInfo.name
 
         return try {
+            if (!AddonIdentityPolicy.isSupportedPackageName(packageName)) {
+                reject(
+                    AddonDiscoveryRejectionReason.InvalidMetadata(
+                        key = "packageName",
+                        value = packageName,
+                    ),
+                )
+            }
+
             if (!serviceInfo.exported) {
                 reject(
                     AddonDiscoveryRejectionReason
@@ -147,6 +157,14 @@ class PackageManagerAddonDiscovery(
             val addonId = metadata.requireAddonId(
                 AddonManifestContract.META_ADDON_ID,
             )
+            if (!AddonIdentityPolicy.isSupportedAddonId(addonId)) {
+                reject(
+                    AddonDiscoveryRejectionReason.InvalidMetadata(
+                        key = AddonManifestContract.META_ADDON_ID,
+                        value = addonId.value,
+                    ),
+                )
+            }
 
             val protocolVersion =
                 metadata.requirePositiveInt(

@@ -6,6 +6,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Проверяет alarm-keywords и сохранение чисел из пользовательского запроса.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class AlarmOneShotKeywordsTest {
 
     @Test
@@ -32,17 +38,17 @@ class AlarmOneShotKeywordsTest {
     fun `draft preserves count and relative hours`() {
         val draft = AlarmUserPromptDraft.build("поставь 5 будильников через 10 часов")
 
-        assertTrue(draft?.preferredActionName == AlarmToolOneShot.AfterHours.codeName)
-        assertTrue(draft?.plannerInputJson?.contains(""""count":5""") == true)
-        assertTrue(draft?.plannerInputJson?.contains(""""hours":10""") == true)
+        assertTrue(draft?.expectedActionName == AlarmToolOneShot.AfterHours.codeName)
+        assertTrue(draft?.argumentsJson?.contains(""""count":5""") == true)
+        assertTrue(draft?.argumentsJson?.contains(""""hours":10""") == true)
     }
 
     @Test
     fun `draft preserves count and relative minutes`() {
         val draft = AlarmUserPromptDraft.build("поставь 20 будильников через 4 минуты")
 
-        assertTrue(draft?.preferredActionName == AlarmToolOneShot.AfterMinutes.codeName)
-        assertTrue(draft?.plannerInputJson?.contains(""""count":20""") == true)
-        assertTrue(draft?.plannerInputJson?.contains(""""minutes":4""") == true)
+        assertTrue(draft?.expectedActionName == AlarmToolOneShot.AfterMinutes.codeName)
+        assertTrue(draft?.argumentsJson?.contains(""""count":20""") == true)
+        assertTrue(draft?.argumentsJson?.contains(""""minutes":4""") == true)
     }
 }

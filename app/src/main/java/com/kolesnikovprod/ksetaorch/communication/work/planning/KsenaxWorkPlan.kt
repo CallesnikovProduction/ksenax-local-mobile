@@ -26,8 +26,4 @@ sealed interface KsenaxWorkPlan {
         override val plannerComment: String? = null,
     ) : KsenaxWorkPlan
 
-    data class AssistantMessage(
-        val message: String,
-        override val plannerComment: String? = null,
-    ) : KsenaxWorkPlan
 }

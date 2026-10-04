@@ -49,6 +49,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.kolesnikovprod.ksetaorch.ui.helpers.permissions.KsenaxWorkingFolderSelection
 
+/**
+ * Общая ViewModel корневого UI-графа OpenKsenax.
+ *
+ * Она принадлежит main back-stack entry и переживает переходы в настройки и
+ * chat destinations. ViewModel владеет общим presentation-state: выбранным
+ * режимом, списком Room-чатов, настройками, voice input и install lifecycle.
+ * Состояние и выполнение конкретного Basic, Agentic или Temporaric-чата остаются
+ * в соответствующих chat ViewModel.
+ *
+ * Навигационные команды и [androidx.navigation.NavController] сюда намеренно не
+ * передаются: ViewModel публикует состояние и принимает UI-события, а сменой
+ * destination управляет `KsenaxAppRoute`.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
+ */
 class KsenaxMainViewModel(application: Application) : AndroidViewModel(application) {
 
     /*
@@ -217,6 +233,24 @@ class KsenaxMainViewModel(application: Application) : AndroidViewModel(applicati
     fun onModeSelected(mode: ChatMode) {
         uiState = uiState.onModeSelectedDownstreamed(mode)
     }
+
+    /**
+     * Возвращает response-модель, с которой navigation boundary должна создать
+     * Basic или Temporaric ViewModel.
+     *
+     * После обычной инициализации используется install-aware выбор из [uiState].
+     * При восстановлении процесса route может быть создан раньше завершения
+     * асинхронной проверки файлов; тогда метод сохраняет пользовательский выбор
+     * из исходного settings snapshot. Gemma остаётся последним fallback и будет
+     * остановлена обычным model gate, если её файл отсутствует.
+     *
+     * @since 0.4
+     */
+    internal fun responseModelForChatRoute(): KsenaxSupportedTextModel =
+        KsenaxSupportedTextModelSelector.resolveForChatRoute(
+            resolvedSelection = uiState.selectedSupportedModel,
+            savedSelection = initialSettingsSnapshot.responseModel,
+        )
 
     fun onWorkingFolderSelected(selection: KsenaxWorkingFolderSelection) {
         if (!selection.hasPersistedPermission) {

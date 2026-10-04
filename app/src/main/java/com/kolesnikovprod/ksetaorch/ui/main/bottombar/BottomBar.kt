@@ -44,6 +44,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -221,15 +222,15 @@ fun GlowingBottomBar(
             ) + fadeOut(animationSpec = tween(durationMillis = 160)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .offset(
-                    y = -(
+                .offset {
+                    val panelOffset =
                         if (pixelizedBottomBarHeight > 0.dp) {
                             pixelizedBottomBarHeight - BottomBarTopPadding + 8.dp
                         } else {
                             bottomBarBottomPadding + VoicePanelBottomOffset
                         }
-                    ),
-                )
+                    IntOffset(x = 0, y = -panelOffset.roundToPx())
+                }
                 .padding(horizontal = 27.dp),
         ) {
             VoiceActivityPanel(

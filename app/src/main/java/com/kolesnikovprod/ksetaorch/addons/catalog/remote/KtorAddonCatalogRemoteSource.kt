@@ -111,7 +111,7 @@ class KtorAddonCatalogRemoteSource(
     private companion object {
         const val DEFAULT_MAX_RESPONSE_BYTES: Int = 1_048_576
         const val USER_AGENT: String =
-            "OpenKsenax-Addon-Catalog/0.3"
+            "OpenKsenax-Addon-Catalog/0.4"
         val SUCCESSFUL_STATUS_RANGE: IntRange = 200..299
 
         fun parseRegistryUrl(rawUrl: String): Url {

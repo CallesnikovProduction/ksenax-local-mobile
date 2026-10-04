@@ -16,6 +16,8 @@ sealed interface KsenaxAgentTurnStage {
 
     data object RequestReceived : KsenaxAgentTurnStage
 
+    data object Routing : KsenaxAgentTurnStage
+
     data object Planning : KsenaxAgentTurnStage
 
     data object CompilingAction : KsenaxAgentTurnStage

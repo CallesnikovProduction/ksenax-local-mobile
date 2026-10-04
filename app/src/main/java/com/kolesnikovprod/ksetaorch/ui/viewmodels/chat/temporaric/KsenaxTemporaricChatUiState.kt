@@ -59,6 +59,12 @@ data class KsenaxTemporaricChatUiState(
     }
 }
 
+/**
+ * Одноразовые события RAM-only чата для navigation boundary.
+ *
+ * @since 0.4
+ * @author Stephan Kolesnikov
+ */
 sealed interface KsenaxTemporaricChatEffect {
     data class InitialMessageAccepted(
         val text: String,

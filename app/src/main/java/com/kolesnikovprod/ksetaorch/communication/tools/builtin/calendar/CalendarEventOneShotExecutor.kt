@@ -12,6 +12,12 @@ import java.time.ZoneId
 import java.util.Locale
 import org.json.JSONObject
 
+/**
+ * Преобразует локальные дату и время OneShot-вызова в Android Calendar-команду.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class CalendarEventOneShotExecutor(
     private val calendarEventToolExecutor: CalendarEventToolExecutor,
 ) : KsenaxToolExecutor {

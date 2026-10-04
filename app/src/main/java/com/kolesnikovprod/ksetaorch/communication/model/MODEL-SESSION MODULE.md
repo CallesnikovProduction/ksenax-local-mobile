@@ -356,7 +356,7 @@ audio payload. В текущей архитектуре recorder отвечае�
 
 - `communication.voice` записывает файл и собирает metadata;
 - `communication.model` отправляет файл в модель;
-- `communication.orchestration` решает, что делать с распознанным текстом.
+- `communication.work` решает, что делать с распознанным текстом в Agentic-режиме.
 
 Если позже появится внешний STT движок, можно будет добавить отдельный контракт
 выше `model`, например `KsenaxSpeechRecognizer`. Сейчас транскрибация через

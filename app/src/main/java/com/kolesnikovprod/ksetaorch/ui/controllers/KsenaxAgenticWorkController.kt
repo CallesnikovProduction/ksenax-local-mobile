@@ -2,6 +2,7 @@ package com.kolesnikovprod.ksetaorch.ui.controllers
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelSession
 import com.kolesnikovprod.ksetaorch.communication.tools.builtin.alarm.AlarmOneShotExecutor
 import com.kolesnikovprod.ksetaorch.communication.tools.builtin.alarm.AlarmOneShotToolModule
@@ -61,15 +62,19 @@ class KsenaxAgenticWorkController(
         workspaceDisplayPath: String,
     ): Result<KsenaxAgentTurnRuntime> = withContext(Dispatchers.IO) {
         runCatching {
-            val storage = createInitializedStorage(
-                workspaceTreeUri = workspaceTreeUri,
-                workspaceDisplayPath = workspaceDisplayPath,
-            )
-            val noteWriter = ObsidianWriterToolExecutor(storage)
+            val noteWriter = ObsidianWriterToolExecutor {
+                createInitializedStorage(
+                    workspaceTreeUri = workspaceTreeUri,
+                    workspaceDisplayPath = workspaceDisplayPath,
+                )
+            }
 
             KsenaxAgenticWorkRuntime(
                 plannerSession = plannerSession,
                 actionSession = actionSession,
+                onDiagnostic = { event ->
+                    Log.d("KsenaxWork", "stage=${event.stage} action=${event.action} latencyMs=${event.latencyMs} category=${event.category}")
+                },
                 actionKits = listOf(
                     TorchToolModule(
                         executor = TorchExecutor(appContext),

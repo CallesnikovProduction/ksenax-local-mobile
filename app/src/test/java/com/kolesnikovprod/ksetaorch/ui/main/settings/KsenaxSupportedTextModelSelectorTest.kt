@@ -51,4 +51,37 @@ class KsenaxSupportedTextModelSelectorTest {
             ),
         )
     }
+
+    @Test
+    fun resolvedSelectionWinsForChatRoute() {
+        assertEquals(
+            KsenaxSupportedTextModel.Gemma,
+            KsenaxSupportedTextModelSelector.resolveForChatRoute(
+                resolvedSelection = KsenaxSupportedTextModel.Gemma,
+                savedSelection = KsenaxSupportedTextModel.FunctionGemma,
+            ),
+        )
+    }
+
+    @Test
+    fun savedSelectionIsUsedDuringEarlyRouteRestoration() {
+        assertEquals(
+            KsenaxSupportedTextModel.FunctionGemma,
+            KsenaxSupportedTextModelSelector.resolveForChatRoute(
+                resolvedSelection = null,
+                savedSelection = KsenaxSupportedTextModel.FunctionGemma,
+            ),
+        )
+    }
+
+    @Test
+    fun gemmaIsChatRouteFallbackWithoutAnySelection() {
+        assertEquals(
+            KsenaxSupportedTextModel.Gemma,
+            KsenaxSupportedTextModelSelector.resolveForChatRoute(
+                resolvedSelection = null,
+                savedSelection = null,
+            ),
+        )
+    }
 }

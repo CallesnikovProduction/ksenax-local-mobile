@@ -38,10 +38,23 @@ class KsenaxModelFilePresenceChecker(
     suspend fun hasModelFileIn(
         modelDirectoryName: String,
     ): Boolean {
+        require(
+            modelDirectoryName.isNotBlank() &&
+                modelDirectoryName != "." &&
+                modelDirectoryName != ".." &&
+                '/' !in modelDirectoryName &&
+                '\\' !in modelDirectoryName &&
+                '\u0000' !in modelDirectoryName
+        ) {
+            "modelDirectoryName must be a single safe path segment"
+        }
+
         return withContext(Dispatchers.IO) {
+            val externalFilesDirectory =
+                appContext.getExternalFilesDir(null) ?: return@withContext false
             val targetDirectory = File(
                 File(
-                    appContext.getExternalFilesDir(null),
+                    externalFilesDirectory,
                     MODELS_DIRECTORY_NAME
                 ),
                 modelDirectoryName,

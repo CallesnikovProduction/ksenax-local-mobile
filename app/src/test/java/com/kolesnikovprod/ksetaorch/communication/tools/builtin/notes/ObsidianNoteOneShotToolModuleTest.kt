@@ -7,8 +7,15 @@ import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolResu
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolRiskLevel
 import com.kolesnikovprod.ksetaorch.communication.work.planning.KsenaxWorkPlanStep
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
+/**
+ * Проверяет передачу содержимого заметки мимо короткого FG prompt.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class ObsidianNoteOneShotToolModuleTest {
 
     @Test
@@ -37,9 +44,9 @@ class ObsidianNoteOneShotToolModuleTest {
     }
 
     @Test
-    fun `resolveExecutableCall falls back to detailed user note content when planner body is only command`() {
+    fun `planner command cannot masquerade as generated note body`() {
         val module = ObsidianNoteOneShotToolModule(FakeExecutor)
-        val call = module.resolveExecutableCall(
+        assertThrows(IllegalArgumentException::class.java) { module.resolveExecutableCall(
             userMessage = "Создай и запиши заметку о том, как мы хорошо провели с Ксюшей время 5 июля, что было всё фантастически, и этот вечер я запомню надолго",
             step = KsenaxWorkPlanStep(
                 id = "step_1",
@@ -54,14 +61,7 @@ class ObsidianNoteOneShotToolModuleTest {
                 requiresConfirmation = false,
                 riskLevel = KsenaxToolRiskLevel.LOW,
             ),
-        )
-
-        val arguments = call.arguments.JSONtoString()
-        assertTrue(arguments.contains(""""title":"Ежедневная заметка""""))
-        assertTrue(arguments.contains("Ксюшей"))
-        assertTrue(arguments.contains("5 июля"))
-        assertTrue(arguments.contains("фантастически"))
-        assertTrue(arguments.contains("запомню надолго"))
+        ) }
     }
 
     private object FakeExecutor : KsenaxToolExecutor {

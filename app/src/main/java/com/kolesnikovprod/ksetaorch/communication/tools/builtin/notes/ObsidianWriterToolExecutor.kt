@@ -8,12 +8,9 @@ import com.kolesnikovprod.ksetaorch.communication.tools.builtin.notes.utils.Obsi
 import com.kolesnikovprod.ksetaorch.communication.tools.builtin.notes.utils.ObsidianNoteProperties.buildObsidianPropertiesBlock
 import com.kolesnikovprod.ksetaorch.communication.tools.builtin.notes.utils.ObsidianNoteProperties.buildMarkdownDocument
 import com.kolesnikovprod.ksetaorch.communication.tools.builtin.notes.utils.ObsidianNoteProperties.updateObsidianProperties
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxRawToolArgumentsObject
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolDefinition
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolResult
-import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolRiskLevel
 import com.kolesnikovprod.ksetaorch.storage.KsenaxTextFileFormat
 import com.kolesnikovprod.ksetaorch.storage.KsenaxTextFileResolver
 import com.kolesnikovprod.ksetaorch.storage.dto.KsenaxTextFileReadResult
@@ -32,12 +29,22 @@ import org.json.JSONObject
  * [KsenaxTextFileResolver]. Если файл с такой датой и заголовком уже есть,
  * исполнитель дописывает новый блок в конец файла.
  *
- * @property fileResolver слой записи и чтения markdown-файлов.
+ * Resolver создаётся лениво: отсутствие или потеря SAF workspace не должно
+ * блокировать MODEL VERIFICATION и actions, которым файловая система не нужна.
  *
  * @since 0.2
  * @author Stephan Kolesnikov
  */
-class ObsidianWriterToolExecutor(private val fileResolver: KsenaxTextFileResolver) : KsenaxToolExecutor {
+class ObsidianWriterToolExecutor(
+    private val fileResolverProvider: () -> KsenaxTextFileResolver,
+) : KsenaxToolExecutor {
+
+    constructor(fileResolver: KsenaxTextFileResolver) : this({ fileResolver })
+
+    private val fileResolver: KsenaxTextFileResolver by lazy(
+        mode = LazyThreadSafetyMode.SYNCHRONIZED,
+        initializer = fileResolverProvider,
+    )
 
     override suspend fun execute(
         call: KsenaxToolCall,
@@ -173,6 +180,8 @@ class ObsidianWriterToolExecutor(private val fileResolver: KsenaxTextFileResolve
                 shouldAppend = shouldAppend,
                 action       = action,
             )
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
         } catch (error: Exception) {
             KsenaxToolResult.Failure(
                 callId    = call.id,
@@ -300,56 +309,5 @@ class ObsidianWriterToolExecutor(private val fileResolver: KsenaxTextFileResolve
          */
         const val CREATE_OR_EDIT_MARKDOWN_NOTE = "create_or_edit_markdown_note"
 
-        /**
-         * Возвращает имена инструментов, которые исполняет этот класс.
-         *
-         * @since 0.2
-         */
-        fun toolNames(): List<String> =
-            listOf(CREATE_OR_EDIT_MARKDOWN_NOTE)
-
-        /**
-         * Возвращает описание Obsidian-инструмента для маршрутизирующей модели.
-         *
-         * @since 0.2
-         */
-        fun definitions(): List<KsenaxToolDefinition> =
-            listOf(
-                KsenaxToolDefinition(
-                    name = CREATE_OR_EDIT_MARKDOWN_NOTE,
-                    description = "Creates or appends an Obsidian-compatible Markdown note.",
-                    arguments = KsenaxRawToolArgumentsObject(OBSIDIAN_WRITER_ARGUMENT_SCHEMA),
-                    riskLevel = KsenaxToolRiskLevel.MEDIUM,
-                    requiresConfirmationByDefault = false,
-                )
-            )
-
-        /**
-         * JSON-схема `arguments` для создания или дописывания markdown-заметки.
-         *
-         * Модель должна передать короткий `title` и непустое тело
-         * `markdown_body`. Служебные свойства Obsidian выставляет программа, а
-         * не модель.
-         *
-         * @since 0.2
-         */
-        private val OBSIDIAN_WRITER_ARGUMENT_SCHEMA: String =
-            """
-            {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string",
-                  "description": "Короткое название заметки без даты, расширения .md и запрещенных символов."
-                },
-                "markdown_body": {
-                  "type": "string",
-                  "description": "Структурированное тело заметки в Markdown."
-                }
-              },
-              "required": ["title", "markdown_body"],
-              "additionalProperties": false
-            }
-            """.trimIndent()
     }
 }

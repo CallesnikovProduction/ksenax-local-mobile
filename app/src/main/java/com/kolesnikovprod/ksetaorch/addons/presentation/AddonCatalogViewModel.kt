@@ -12,14 +12,13 @@ import com.kolesnikovprod.ksetaorch.addons.coordination.AddonCoordinator
 import com.kolesnikovprod.ksetaorch.addons.coordination.AddonUninstallRequest
 import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallProgress
 import com.kolesnikovprod.ksetaorch.addons.download.AddonInstallStage
-import com.kolesnikovprod.ksetaorch.addons.registry.AddonBannerArtifact
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonInstallationState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistry
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryRefreshMode
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistrySourceStatus
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryState
-import com.kolesnikovprod.ksetaorch.addons.storage.AddonLocalStore
-import com.kolesnikovprod.ksetaorch.addons.storage.InstalledAddonRecord
+import com.kolesnikovprod.ksetaorch.addons.storage.contract.AddonLocalStore
+import com.kolesnikovprod.ksetaorch.addons.storage.contract.InstalledAddonRecord
 import dev.openksenax.addons.contract.AddonId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -66,6 +65,8 @@ class AddonCatalogViewModel internal constructor(
         MutableStateFlow<Set<AddonId>>(emptySet())
     private val hiddenAvailableAddonIds =
         MutableStateFlow<Set<AddonId>>(emptySet())
+    private val installedRecords =
+        MutableStateFlow<Map<AddonId, InstalledAddonRecord>>(emptyMap())
 
     private val bannerJobs = mutableMapOf<AddonId, Job>()
     private val installSessions =
@@ -91,10 +92,12 @@ class AddonCatalogViewModel internal constructor(
     private val registryMappingState = combine(
         registry.state,
         unavailableAddonVisibility,
-    ) { registryState, hiddenIds ->
+        installedRecords,
+    ) { registryState, hiddenIds, records ->
         RegistryMappingInput(
             registryState = registryState,
             hiddenAvailableAddonIds = hiddenIds,
+            installedRecords = records,
         )
     }
 
@@ -113,6 +116,7 @@ class AddonCatalogViewModel internal constructor(
             infoOverlay = overlay,
             hiddenAvailableAddonIds =
                 registryInput.hiddenAvailableAddonIds,
+            installedRecords = registryInput.installedRecords,
         )
     }
 
@@ -147,6 +151,7 @@ class AddonCatalogViewModel internal constructor(
             infoOverlay = primary.infoOverlay,
             hiddenAvailableAddonIds =
                 primary.hiddenAvailableAddonIds,
+            installedRecords = primary.installedRecords,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -162,8 +167,7 @@ class AddonCatalogViewModel internal constructor(
     init {
         viewModelScope.launch {
             try {
-                val state = registry.ensureInitialized()
-                localStore.reconcile(state)
+                registry.ensureInitialized()
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -173,13 +177,22 @@ class AddonCatalogViewModel internal constructor(
         }
         viewModelScope.launch {
             registry.state.collect { state ->
-                syncBannerArtifacts(state)
+                if (state.isRefreshing) return@collect
+
                 try {
-                    localStore.reconcile(state)
+                    val records = reconcileLocalProjection(state)
+                    syncBannerArtifacts(
+                        registryState = state,
+                        records = records,
+                    )
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Exception) {
                     // Локальная UI-проекция не меняет registry trust verdict.
+                    syncBannerArtifacts(
+                        registryState = state,
+                        records = installedRecords.value,
+                    )
                 }
                 clearMissingSelection(state)
                 clearMissingInfoOverlay(state)
@@ -198,12 +211,12 @@ class AddonCatalogViewModel internal constructor(
         pendingInstallConfirmationId.value = null
         hiddenAvailableAddonIds.value = emptySet()
         clearFailedAvailableInstalls()
+        clearUnavailableBanners()
         manualRefreshJob?.cancel(
             CancellationException("Manual addon refresh restarted"),
         )
         manualRefreshJob = refreshRegistry(
             mode = AddonRegistryRefreshMode.FORCE_REMOTE,
-            retryUnavailableBanners = true,
         )
     }
 
@@ -217,25 +230,16 @@ class AddonCatalogViewModel internal constructor(
 
         refreshRegistry(
             mode = AddonRegistryRefreshMode.DEFAULT,
-            retryUnavailableBanners = false,
         )
     }
 
     private fun refreshRegistry(
         mode: AddonRegistryRefreshMode,
-        retryUnavailableBanners: Boolean,
     ): Job {
         return viewModelScope.launch {
             actionMessage.value = null
             try {
-                val state = registry.refresh(mode)
-                localStore.reconcile(state)
-                syncBannerArtifacts(
-                    registryState = state,
-                    retryUnavailable = retryUnavailableBanners,
-                )
-                clearMissingSelection(state)
-                clearMissingInstallConfirmation(state)
+                registry.refresh(mode)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (error: Exception) {
@@ -251,6 +255,23 @@ class AddonCatalogViewModel internal constructor(
                 state !is AddonInstallUiState.Failed
             }
         }
+    }
+
+    private fun clearUnavailableBanners(addonId: AddonId? = null) {
+        bannerStates.update { states ->
+            states.filter { (candidateId, state) ->
+                state !is AddonBannerUiState.Unavailable ||
+                    (addonId != null && candidateId != addonId)
+            }
+        }
+    }
+
+    private suspend fun reconcileLocalProjection(
+        state: AddonRegistryState,
+    ): Map<AddonId, InstalledAddonRecord> {
+        return localStore.reconcile(state)
+            .associateBy { record -> AddonId(record.addonId) }
+            .also { records -> installedRecords.value = records }
     }
 
     private fun clearMissingSelection(state: AddonRegistryState) {
@@ -279,25 +300,41 @@ class AddonCatalogViewModel internal constructor(
 
     private fun syncBannerArtifacts(
         registryState: AddonRegistryState,
-        retryUnavailable: Boolean = false,
+        records: Map<AddonId, InstalledAddonRecord> =
+            installedRecords.value,
     ) {
         val requests = registryState.addons.mapNotNull { addon ->
             val published = addon.catalogMetadata
+            val localRecord = records[addon.addonId]
+            val artifact = published?.bannerArtifact
+            val expectedSha256 = if (addon.isInstalled) {
+                localRecord?.bannerSha256 ?: artifact?.sha256
+            } else {
+                artifact?.sha256
+            }
                 ?: return@mapNotNull null
-            val artifact = published.bannerArtifact
+            val packageName = published?.packageName
+                ?: addon.installedMetadata?.packageName
+                ?: localRecord?.packageName
                 ?: return@mapNotNull null
             addon.addonId to BannerLoadRequest(
-                packageName = published.packageName,
+                packageName = packageName,
                 isInstalled = addon.isInstalled,
-                artifact = artifact,
+                bannerUrl = artifact
+                    ?.takeIf { banner ->
+                        banner.sha256 == expectedSha256
+                    }
+                    ?.url,
+                expectedSha256 = expectedSha256,
             )
         }.toMap()
 
         bannerJobs.keys
             .filter { addonId ->
-                val expected = requests[addonId]?.artifact
+                val expected = requests[addonId]
                 val runningSha = bannerStates.value[addonId]?.sha256
-                expected == null || runningSha != expected.sha256
+                expected == null ||
+                    runningSha != expected.expectedSha256
             }
             .forEach { addonId ->
                 bannerJobs.remove(addonId)?.cancel()
@@ -305,7 +342,7 @@ class AddonCatalogViewModel internal constructor(
 
         bannerStates.update { current ->
             current.filter { (addonId, state) ->
-                state.sha256 == requests[addonId]?.artifact?.sha256
+                state.sha256 == requests[addonId]?.expectedSha256
             }
         }
 
@@ -313,12 +350,9 @@ class AddonCatalogViewModel internal constructor(
             val current = bannerStates.value[addonId]
             val alreadyResolved =
                 current is AddonBannerUiState.Ready ||
-                    (
-                        current is AddonBannerUiState.Unavailable &&
-                            !retryUnavailable
-                        )
+                    current is AddonBannerUiState.Unavailable
             if (
-                current?.sha256 == request.artifact.sha256 &&
+                current?.sha256 == request.expectedSha256 &&
                 (
                     alreadyResolved ||
                         current is AddonBannerUiState.Loading
@@ -338,7 +372,7 @@ class AddonCatalogViewModel internal constructor(
         bannerStates.update { current ->
             current + (
                 addonId to AddonBannerUiState.Loading(
-                    request.artifact.sha256,
+                    request.expectedSha256,
                 )
                 )
         }
@@ -353,26 +387,26 @@ class AddonCatalogViewModel internal constructor(
                         addonId = addonId,
                         packageName = request.packageName,
                         isInstalled = request.isInstalled,
-                        bannerUrl = request.artifact.url,
-                        expectedSha256 = request.artifact.sha256,
+                        bannerUrl = request.bannerUrl,
+                        expectedSha256 = request.expectedSha256,
                     )
                 ) {
                     is AddonBannerLoadResult.Ready ->
                         AddonBannerUiState.Ready(
-                            sha256 = request.artifact.sha256,
+                            sha256 = request.expectedSha256,
                             bitmap = result.bitmap,
                         )
 
                     is AddonBannerLoadResult.Failed ->
                         AddonBannerUiState.Unavailable(
-                            sha256 = request.artifact.sha256,
+                            sha256 = request.expectedSha256,
                         )
                 }
 
                 bannerStates.update { current ->
                     if (
                         current[addonId]?.sha256 ==
-                        request.artifact.sha256
+                        request.expectedSha256
                     ) {
                         current + (addonId to bannerState)
                     } else {
@@ -381,6 +415,21 @@ class AddonCatalogViewModel internal constructor(
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
+            } catch (_: Exception) {
+                bannerStates.update { current ->
+                    if (
+                        current[addonId]?.sha256 ==
+                        request.expectedSha256
+                    ) {
+                        current + (
+                            addonId to AddonBannerUiState.Unavailable(
+                                sha256 = request.expectedSha256,
+                            )
+                            )
+                    } else {
+                        current
+                    }
+                }
             } finally {
                 if (bannerJobs[addonId] === loadingJob) {
                     bannerJobs.remove(addonId)
@@ -477,7 +526,6 @@ class AddonCatalogViewModel internal constructor(
             actionMessage.value = null
             refreshRegistry(
                 mode = AddonRegistryRefreshMode.CACHE_ONLY,
-                retryUnavailableBanners = false,
             )
             return
         }
@@ -725,14 +773,10 @@ class AddonCatalogViewModel internal constructor(
             checkingUpdateIds.update { ids -> ids + addonId }
             updateMessageExpiryJobs.remove(addonId)?.cancel()
             updateMessages.update { messages -> messages - addonId }
+            clearUnavailableBanners(addonId)
             try {
                 val state = registry.refresh(
                     AddonRegistryRefreshMode.FORCE_REMOTE,
-                )
-                localStore.reconcile(state)
-                syncBannerArtifacts(
-                    registryState = state,
-                    retryUnavailable = true,
                 )
                 val message = if (
                     state.catalogStatus !=
@@ -777,7 +821,7 @@ class AddonCatalogViewModel internal constructor(
 
         viewModelScope.launch {
             try {
-                localStore.reconcile(registry.state.value)
+                reconcileLocalProjection(registry.state.value)
                 val record = localStore.read(packageName)
                 if (record == null) {
                     actionMessage.value =
@@ -1000,11 +1044,13 @@ private data class PrimaryMappingInput(
     val actionMessage: String?,
     val infoOverlay: AddonInfoUiModel?,
     val hiddenAvailableAddonIds: Set<AddonId>,
+    val installedRecords: Map<AddonId, InstalledAddonRecord>,
 )
 
 private data class RegistryMappingInput(
     val registryState: AddonRegistryState,
     val hiddenAvailableAddonIds: Set<AddonId>,
+    val installedRecords: Map<AddonId, InstalledAddonRecord>,
 )
 
 private data class TransientMappingInput(
@@ -1017,7 +1063,8 @@ private data class TransientMappingInput(
 private data class BannerLoadRequest(
     val packageName: String,
     val isInstalled: Boolean,
-    val artifact: AddonBannerArtifact,
+    val bannerUrl: String?,
+    val expectedSha256: String,
 )
 
 private const val UPDATE_MESSAGE_VISIBLE_MILLIS = 3_000L

@@ -16,6 +16,7 @@ import com.kolesnikovprod.ksetaorch.addons.registry.AddonRegistryState
 import com.kolesnikovprod.ksetaorch.addons.registry.AddonTrustState
 import com.kolesnikovprod.ksetaorch.addons.registry.InstalledAddonMetadata
 import com.kolesnikovprod.ksetaorch.addons.registry.RegisteredAddon
+import com.kolesnikovprod.ksetaorch.addons.storage.contract.InstalledAddonRecord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -234,5 +235,77 @@ class AddonUiMapperTest {
 
         assertTrue(hidden.cards.isEmpty())
         assertEquals(listOf(addonId), visible.cards.map { it.addonId })
+    }
+
+    @Test
+    fun mapsOfflineInstalledAddonFromLocalProjection() {
+        val addonId = AddonId("dev.openksenax.addon.offline")
+        val packageName = "dev.openksenax.offline"
+        val bannerSha256 = "C".repeat(64)
+        val registered = RegisteredAddon(
+            addonId = addonId,
+            catalogMetadata = null,
+            installedMetadata = InstalledAddonMetadata(
+                uid = 10_002,
+                packageName = packageName,
+                versionCode = 3L,
+                versionName = "0.3",
+                managementApiVersion =
+                    AddonManagementContract.CURRENT_API_VERSION,
+                signingCertificateSha256 = setOf("B".repeat(64)),
+            ),
+            managementEndpoint = null,
+            installation = AddonInstallationState.Installed(
+                versionCode = 3L,
+                versionName = "0.3",
+            ),
+            compatibility = AddonCompatibility.Unknown(
+                AddonCompatibility.UnknownReason.CATALOG_UNAVAILABLE,
+            ),
+            trust = AddonTrustState.CatalogUnavailable,
+            grantedHostCapabilities = emptySet(),
+            managementBlockReason =
+                AddonManagementBlockReason.SOURCE_UNAVAILABLE,
+        )
+        val localRecord = InstalledAddonRecord(
+            addonId = addonId.value,
+            packageName = packageName,
+            displayName = "Offline addon",
+            shortDescription = "Saved local description",
+            fullDescription = "Saved full description",
+            versionCode = 3L,
+            versionName = "0.3",
+            installedAtEpochMillis = 100L,
+            lastUpdatedAtEpochMillis = 200L,
+            repositoryUrl = "https://example.invalid/repository",
+            requiredHostCapabilities = emptyList(),
+            apkSha256 = "A".repeat(64),
+            bannerSha256 = bannerSha256,
+        )
+
+        val state = AddonUiMapper.map(
+            registryState = AddonRegistryState(
+                addons = listOf(registered),
+                catalogStatus = AddonRegistrySourceStatus.Unavailable(
+                    errorMessage = "offline",
+                ),
+                discoveryStatus = AddonRegistrySourceStatus.Fresh,
+                isInitialized = true,
+            ),
+            selectedAddonId = null,
+            actionMessage = null,
+            installedRecords = mapOf(addonId to localRecord),
+            bannerStates = mapOf(
+                addonId to AddonBannerUiState.Loading(bannerSha256),
+            ),
+        )
+
+        val card = state.cards.single()
+        assertEquals("Offline addon", card.title)
+        assertEquals("Saved local description", card.description)
+        assertEquals(packageName, card.packageName)
+        assertEquals(bannerSha256, card.banner.sha256)
+        assertTrue(card.isInstalled)
+        assertTrue(card.canOpen)
     }
 }

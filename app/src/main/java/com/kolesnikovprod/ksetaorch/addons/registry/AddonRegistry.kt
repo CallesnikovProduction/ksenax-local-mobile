@@ -57,17 +57,18 @@ interface AddonRegistry {
  * @since 0.3
  */
 data class AddonRegistryState(
-    val addons: List<RegisteredAddon> = emptyList(),
-    val discoveryIssues: List<AddonRegistryDiscoveryIssue> =
+    val addons                            : List<RegisteredAddon> =
         emptyList(),
-    val isRefreshing: Boolean = false,
-    val catalogStatus: AddonRegistrySourceStatus =
+    val discoveryIssues                   : List<AddonRegistryDiscoveryIssue> =
+        emptyList(),
+    val isRefreshing                      : Boolean = false,
+    val catalogStatus                     : AddonRegistrySourceStatus =
         AddonRegistrySourceStatus.NotLoaded,
-    val discoveryStatus: AddonRegistrySourceStatus =
+    val discoveryStatus                   : AddonRegistrySourceStatus =
         AddonRegistrySourceStatus.NotLoaded,
-    val refreshedAtEpochMillis: Long? = null,
-    val authorizationValidUntilEpochMillis: Long? = null,
-    val isInitialized: Boolean = false,
+    val refreshedAtEpochMillis            : Long?   = null,
+    val authorizationValidUntilEpochMillis: Long?   = null,
+    val isInitialized                     : Boolean = false,
 )
 
 /**

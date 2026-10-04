@@ -1,9 +1,16 @@
 package com.kolesnikovprod.ksetaorch.communication.tools.builtin.flashlight
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Проверяет короткий flashlight-протокол и его входные слова.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class TorchOneShotProtocolTest {
 
     @Test
@@ -30,6 +37,8 @@ class TorchOneShotProtocolTest {
 
             Action instruction:
             Включи фонарик
+
+            Return exactly one function call and no prose.
             <end_of_turn>
 
             <start_of_turn>model
@@ -51,5 +60,12 @@ class TorchOneShotProtocolTest {
         val prompt = TorchOneShotProtocol.buildOneShotPrompt("фонарик")
 
         assertTrue(prompt.contains("declaration:torch_toggle{"))
+    }
+
+    @Test
+    fun `keywords match flashlight forms without matching a person name`() {
+        assertTrue(TorchOneShotKeywords.matches("Погаси вспышку"))
+        assertTrue(TorchOneShotKeywords.matches("Включи свет на телефоне"))
+        assertFalse(TorchOneShotKeywords.matches("Позвони Светлане"))
     }
 }

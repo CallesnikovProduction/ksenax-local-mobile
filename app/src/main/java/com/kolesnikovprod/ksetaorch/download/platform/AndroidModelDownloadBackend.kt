@@ -4,11 +4,12 @@ import android.app.DownloadManager
 import android.content.Context
 import androidx.core.net.toUri
 import com.kolesnikovprod.ksetaorch.download.domain.DownloadTransferMetricsEstimator
+import com.kolesnikovprod.ksetaorch.download.domain.FileIntegrityVerifier
+import com.kolesnikovprod.ksetaorch.download.domain.FileTreeDeleter
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadState
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadWaitReason
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * Низкоуровневый Android-backend для загрузки и хранения модельных файлов.
@@ -138,7 +139,8 @@ internal class AndroidModelDownloadBackend(
         modelNameAsDirectory: String,
         fileName:             String,
     ): String {
-        return "${modelDirectoryPath(modelNameAsDirectory)}/$fileName"
+        val safeFileName = requireSafePathSegment(fileName, "fileName")
+        return "${modelDirectoryPath(modelNameAsDirectory)}/$safeFileName"
     }
 
     /**
@@ -157,7 +159,11 @@ internal class AndroidModelDownloadBackend(
      * @since 0.2
      */
     fun modelDirectoryPath(modelNameAsDirectory: String): String {
-        return "models/$modelNameAsDirectory"
+        val safeDirectoryName = requireSafePathSegment(
+            value = modelNameAsDirectory,
+            argumentName = "modelNameAsDirectory",
+        )
+        return "models/$safeDirectoryName"
     }
 
     /**
@@ -176,9 +182,10 @@ internal class AndroidModelDownloadBackend(
         modelNameAsDirectory: String,
         fileName:             String,
     ): File {
-        return File(
-            getModelDirectory(modelNameAsDirectory),
-            fileName,
+        val safeFileName = requireSafePathSegment(fileName, "fileName")
+        return resolveSafeChild(
+            parent = getModelDirectory(modelNameAsDirectory),
+            childName = safeFileName,
         )
     }
 
@@ -193,9 +200,20 @@ internal class AndroidModelDownloadBackend(
      * @since 0.2
      */
     fun getModelDirectory(modelNameAsDirectory: String): File {
-        return File(
-            appContext.getExternalFilesDir(null),
-            modelDirectoryPath(modelNameAsDirectory),
+        val externalFilesDirectory = checkNotNull(appContext.getExternalFilesDir(null)) {
+                "App-specific external storage is unavailable"
+            }
+        val modelsDirectory = resolveSafeChild(
+            parent = externalFilesDirectory,
+            childName = MODELS_DIRECTORY_NAME,
+        )
+
+        return resolveSafeChild(
+            parent = modelsDirectory,
+            childName = requireSafePathSegment(
+                modelNameAsDirectory,
+                "modelNameAsDirectory",
+            ),
         )
     }
 
@@ -217,9 +235,13 @@ internal class AndroidModelDownloadBackend(
         modelNameAsDirectory: String,
         directoryName:        String,
     ): File {
-        return File(
-            getModelDirectory(modelNameAsDirectory),
-            directoryName,
+        val safeDirectoryName = requireSafePathSegment(
+            value = directoryName,
+            argumentName = "directoryName",
+        )
+        return resolveSafeChild(
+            parent = getModelDirectory(modelNameAsDirectory),
+            childName = safeDirectoryName,
         )
     }
 
@@ -270,7 +292,7 @@ internal class AndroidModelDownloadBackend(
 
         if (!subdirectory.exists()) return true
 
-        return subdirectory.deleteRecursively()
+        return FileTreeDeleter.deleteIfExists(subdirectory)
     }
 
     /**
@@ -424,25 +446,15 @@ internal class AndroidModelDownloadBackend(
         expectedSizeBytes:    Long,
         expectedSha256:       String,
     ): Boolean {
-        require(expectedSizeBytes > 0)
-        require(expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$")))
-
         val modelFile = getModelFile(
             modelNameAsDirectory = modelNameAsDirectory,
             fileName             = fileName,
         )
 
-        if (!modelFile.exists() || !modelFile.isFile) {
-            return false
-        }
-
-        if (modelFile.length() != expectedSizeBytes) {
-            return false
-        }
-
-        return calculateSha256(modelFile).equals(
-            expectedSha256,
-            ignoreCase = true,
+        return FileIntegrityVerifier.matches(
+            file = modelFile,
+            expectedSizeBytes = expectedSizeBytes,
+            expectedSha256 = expectedSha256,
         )
     }
 
@@ -512,31 +524,40 @@ internal class AndroidModelDownloadBackend(
         }
     }
 
-    /**
-     * Вычисляет SHA-256 хэш файла потоковым чтением.
-     *
-     * Файл читается блоками по [DEFAULT_BUFFER_SIZE], поэтому метод подходит
-     * для больших модельных файлов и не загружает весь artifact в память.
-     *
-     * @return шестнадцатеричный вид SHA-256 строки в lowercase.
-     */
-    private fun calculateSha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-
-        file.inputStream().use { inputStream ->
-            while (true) {
-                val readBytes = inputStream.read(buffer)
-
-                if (readBytes == -1) break
-
-                digest.update(buffer, 0, readBytes)
-            }
+    private fun requireSafePathSegment(
+        value: String,
+        argumentName: String,
+    ): String {
+        require(
+            value.isNotBlank() &&
+                value != "." &&
+                value != ".." &&
+                '/' !in value &&
+                '\\' !in value &&
+                '\u0000' !in value
+        ) {
+            "$argumentName must be a single safe path segment"
         }
 
-        return digest.digest()
-            .joinToString(separator = "") { byte ->
-                "%02x".format(byte.toInt() and 0xff)
-            }
+        return value
+    }
+
+    private fun resolveSafeChild(
+        parent: File,
+        childName: String,
+    ): File {
+        val canonicalParent = parent.canonicalFile
+        val canonicalChild = File(canonicalParent, childName).canonicalFile
+        val childPrefix = canonicalParent.path + File.separator
+
+        require(canonicalChild.path.startsWith(childPrefix)) {
+            "Resolved path must stay inside ${canonicalParent.path}"
+        }
+
+        return canonicalChild
+    }
+
+    private companion object {
+        const val MODELS_DIRECTORY_NAME = "models"
     }
 }

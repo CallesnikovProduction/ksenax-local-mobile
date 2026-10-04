@@ -30,6 +30,22 @@ UI-state и сам helper. Изменять только минимально н
   Android permissions/SAF и преобразование выбранного URI в display-only
   путь. Display path не является гарантированным файловым путём и не заменяет
   исходный `Uri`.
+- `KsenaxNavigationComposeHelpers.kt` получает process composition root и
+  main back-stack entry, разбирает settings page и централизованно очищает
+  одноразовые launch-параметры Basic/Agentic-чатов.
+
+## Navigation-state
+
+`KsenaxMainViewModel` принадлежит main back-stack entry. Basic и Agentic
+ViewModel принадлежат собственным chat destination, а Temporaric ViewModel
+намеренно принадлежит main entry, чтобы RAM-only переписка была общей между
+main и temporaric destination.
+
+Initial message и Agentic workspace-параметры временно лежат в
+`SavedStateHandle` main entry. Они обязаны очищаться после успешного consumption
+и при любом уходе из соответствующего chat destination, включая переход в
+Settings или чат другого режима. Иначе старый prompt/URI может протечь в
+следующий создаваемый чат.
 
 ## Главная граница: `download -> ViewModel`
 

@@ -41,7 +41,7 @@ policy, не исполняет tools и не управляет Android UI.
 KsenaxAndroidApplication
   -> LiteRtKsenaxModelSession
   -> KsenaxModelSession
-  -> communication.orchestration / chat coordinators
+  -> communication.work / chat coordinators
   -> ViewModel
 ```
 
@@ -76,6 +76,16 @@ LiteRT-LM живёт в `internal/litert/LiteRtModelSessionEngine`.
 
 ## Как выбрать метод session
 
+### FunctionGemma
+
+`askFunctions(KsenaxModelFunctionRequest)` создаёт свежую Conversation с
+`OpenApiTool` и `automaticToolCalling=false`. LiteRT владеет chat-template;
+ручные control tokens не передаются. Ответ — `KsenaxModelFunctionResponse`
+с предложенными вызовами и latency, без Android-исполнения. Проверка аргументов
+и policy остаются в `work`. Inference использует общий mutex; отмена вызывает
+`cancelProcess`, Conversation закрывается. Shared engine не пересоздаётся.
+`KsenaxModelFunctionRequest.kt` содержит DTO запроса, объявления и ответа.
+
 ### Agent router
 
 Используй `askStateless` с профилем `ROUTER`.
@@ -94,7 +104,7 @@ val response = modelSession.askStateless(
 ```
 
 Parser, policy и tool execution работают после получения `response.text` в
-`communication.orchestration`.
+`communication.work`.
 
 ### Обычный чат
 

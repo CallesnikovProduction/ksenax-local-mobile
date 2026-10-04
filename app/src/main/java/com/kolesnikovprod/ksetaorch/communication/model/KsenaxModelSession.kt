@@ -22,6 +22,15 @@ import kotlinx.coroutines.flow.Flow
 interface KsenaxModelSession {
 
     /**
+     * Создаёт свежий диалог с функциями без автоматического исполнения.
+     * Реализация без поддержки функций завершает запрос явной ошибкой.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    suspend fun askFunctions(request: KsenaxModelFunctionRequest): KsenaxModelFunctionResponse =
+        throw UnsupportedOperationException("This session does not support native function calls.")
+
+    /**
      * Текущие параметры model runtime.
      *
      * Runtime-реализации должны переопределять значение, если поддерживают

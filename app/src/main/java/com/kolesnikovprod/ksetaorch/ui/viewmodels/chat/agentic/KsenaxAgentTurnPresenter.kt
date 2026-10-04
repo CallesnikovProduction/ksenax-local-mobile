@@ -8,6 +8,7 @@ internal object KsenaxAgentTurnPresenter {
 
     fun stageText(stage: KsenaxAgentTurnStage): String = when (stage) {
         KsenaxAgentTurnStage.RequestReceived -> "Получаю твой запрос."
+        KsenaxAgentTurnStage.Routing -> "Определяю маршрут через FunctionGemma."
         KsenaxAgentTurnStage.Planning -> "Планирую действия."
         KsenaxAgentTurnStage.CompilingAction -> "Готовлю короткий FunctionGemma-вызов."
         is KsenaxAgentTurnStage.ExecutingTools -> {
@@ -21,18 +22,15 @@ internal object KsenaxAgentTurnPresenter {
                 "alarm_at_time",
                 "alarm_after_hours",
                 "alarm_after_minutes",
-                "alarm_at_date_time",
-                "alarm_clear_all" -> "Создаю будильник."
-                "calendar_event_tool" -> "Добавляю событие в календарь."
+                "alarm_at_date_time" -> "Создаю будильник."
+                "alarm_clear_all" -> "Отключаю системные будильники."
+                "calendar_event_tool", "calendar_event_create" -> "Добавляю событие в календарь."
                 else -> "Выполняю действие."
             }
         }
     }
 
     fun resultText(result: KsenaxAgentTurnResult): String = when (result) {
-        is KsenaxAgentTurnResult.AssistantMessage ->
-            result.message.ifBlank { "Ответ модели получен." }
-
         is KsenaxAgentTurnResult.Clarification -> result.question
         is KsenaxAgentTurnResult.Refusal -> result.message
         is KsenaxAgentTurnResult.ModelFailure ->

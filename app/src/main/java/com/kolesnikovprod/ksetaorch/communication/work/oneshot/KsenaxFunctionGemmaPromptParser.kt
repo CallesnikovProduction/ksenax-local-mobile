@@ -48,13 +48,15 @@ object KsenaxFunctionGemmaPromptParser : KsenaxOneShotPromptParser {
             appendLine()
             appendLine("Action instruction:")
             appendLine(input.stepInstruction)
-            input.plannerInputJson
+            input.inputJson
                 ?.takeIf(String::isNotBlank)
-                ?.let { plannerInputJson ->
+                ?.let { inputJson ->
                     appendLine()
-                    appendLine("Planner input JSON:")
-                    appendLine(plannerInputJson)
+                    appendLine("Normalized input JSON:")
+                    appendLine(inputJson)
                 }
+            appendLine()
+            appendLine("Return exactly one function call and no prose.")
             appendLine("<end_of_turn>")
             appendLine()
             append("<start_of_turn>model")

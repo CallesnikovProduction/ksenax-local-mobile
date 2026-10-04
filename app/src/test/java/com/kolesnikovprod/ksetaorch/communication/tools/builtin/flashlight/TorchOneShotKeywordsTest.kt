@@ -4,6 +4,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Проверяет тематический вход flashlight-kit.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 class TorchOneShotKeywordsTest {
 
     @Test
@@ -18,5 +24,6 @@ class TorchOneShotKeywordsTest {
     fun `rejects unrelated prompts`() {
         assertFalse(TorchOneShotKeywords.matches("Привет"))
         assertFalse(TorchOneShotKeywords.matches("Открой заметки"))
+        assertFalse(TorchOneShotKeywords.matches("Позвони Светлане"))
     }
 }

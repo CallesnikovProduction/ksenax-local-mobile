@@ -124,7 +124,7 @@ import kotlinx.coroutines.launch
 fun KsenaxMainScreen(
     viewModel:  KsenaxMainViewModel,
     addonCatalogViewModel: AddonCatalogViewModel,
-    appVersion: Float,
+    appVersion: String,
     onBasicChatRequested: (String) -> Unit,
     onBasicChatSelected: (Long) -> Unit,
     onAgenticChatRequested: (String, String?, String) -> Unit,

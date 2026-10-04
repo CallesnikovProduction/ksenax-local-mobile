@@ -102,9 +102,7 @@ internal class ModelInstallFinalizationWorker(
         installUseCase: KsenaxModelInstallUseCase,
         expectedDownloadId: Long,
     ) {
-        if (installUseCase.getSavedDownloadId() == expectedDownloadId) {
-            installUseCase.clearArtifacts()
-        }
+        installUseCase.clearArtifactsIfOwnedBy(expectedDownloadId)
     }
 
     companion object {

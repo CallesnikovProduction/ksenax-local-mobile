@@ -6,6 +6,12 @@ import com.kolesnikovprod.ksetaorch.communication.tools.builtin.alarm.keywords.a
 import com.kolesnikovprod.ksetaorch.communication.tools.builtin.alarm.keywords.attime.AlarmAtTimeOneShotKeywords
 import com.kolesnikovprod.ksetaorch.communication.work.oneshot.KsenaxOneShotKeywords
 
+/**
+ * Узнаёт alarm-тематику после решения FunctionGemma о быстром маршруте.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 object AlarmOneShotKeywords : KsenaxOneShotKeywords {
 
     private val functionKeywords: List<KsenaxOneShotKeywords> =

@@ -15,6 +15,15 @@ import dev.openksenax.addons.contract.AddonId
 import dev.openksenax.addons.contract.HostCapabilityId
 import java.util.Locale
 
+/**
+ * Стандартное преобразование проверенного registry DTO во внутренний catalog
+ * snapshot.
+ *
+ * Mapper не валидирует внешний документ повторно: его входом должен быть DTO,
+ * уже принятый [com.kolesnikovprod.ksetaorch.addons.catalog.validation.AddonCatalogValidator].
+ *
+ * @since 0.4
+ */
 internal class DefaultAddonCatalogMapper :
     AddonCatalogMapper {
 
@@ -53,7 +62,7 @@ internal class DefaultAddonCatalogMapper :
                         apkUrl =
                             entry.release.apkUrl,
                         apkSha256 =
-                            entry.release.apkSha256.uppercase(),
+                            entry.release.apkSha256.uppercase(Locale.ROOT),
                         sizeBytes =
                             entry.release.sizeBytes,
                     ),
@@ -98,7 +107,7 @@ internal class DefaultAddonCatalogMapper :
                             signingCertificateSha256 =
                                 entry.security
                                     .signingCertificateSha256
-                                    .uppercase(),
+                                    .uppercase(Locale.ROOT),
                         ),
                 )
             },

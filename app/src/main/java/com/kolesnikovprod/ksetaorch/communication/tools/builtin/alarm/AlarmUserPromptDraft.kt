@@ -6,9 +6,12 @@ import java.util.Locale
 /**
  * Локальный нормализатор русского UP для быстрых alarm OneShot-вызовов.
  *
- * FunctionGemma остаётся compiler-ом function-call, но числа и единицы времени
- * мы извлекаем сами: это дешевле, стабильнее и не зависит от того, как 270M
- * в конкретном запуске поняла "5 будильников через 10 часов".
+ * FunctionGemma сама выбирает функцию. Нормализатор лишь фиксирует ожидаемую
+ * семантику и явные числа: runtime отклонит противоречащий FG-call, а при
+ * совпадении передаст executor-у точные значения из пользовательского текста.
+ *
+ * @author Stephan Kolesnikov
+ * @since 0.4
  */
 internal object AlarmUserPromptDraft {
 
@@ -18,7 +21,7 @@ internal object AlarmUserPromptDraft {
 
         if (text.isClearRequest()) {
             return KsenaxActionInputDraft(
-                preferredActionName = AlarmToolOneShot.ClearAll.codeName,
+                expectedActionName = AlarmToolOneShot.ClearAll.codeName,
                 instruction = userMessage,
             )
         }
@@ -26,8 +29,8 @@ internal object AlarmUserPromptDraft {
         val count = text.extractAlarmCount()
         text.extractAmountBeforeUnit(MINUTE_UNIT_PREFIXES)?.let { minutes ->
             return KsenaxActionInputDraft(
-                preferredActionName = AlarmToolOneShot.AfterMinutes.codeName,
-                plannerInputJson = buildJson(
+                expectedActionName = AlarmToolOneShot.AfterMinutes.codeName,
+                argumentsJson = buildJson(
                     "minutes" to minutes,
                     "count" to count,
                 ),
@@ -37,8 +40,8 @@ internal object AlarmUserPromptDraft {
 
         text.extractAmountBeforeUnit(HOUR_UNIT_PREFIXES)?.let { hours ->
             return KsenaxActionInputDraft(
-                preferredActionName = AlarmToolOneShot.AfterHours.codeName,
-                plannerInputJson = buildJson(
+                expectedActionName = AlarmToolOneShot.AfterHours.codeName,
+                argumentsJson = buildJson(
                     "hours" to hours,
                     "count" to count,
                 ),
@@ -48,8 +51,8 @@ internal object AlarmUserPromptDraft {
 
         text.extractClockTime()?.let { time ->
             return KsenaxActionInputDraft(
-                preferredActionName = AlarmToolOneShot.AtTime.codeName,
-                plannerInputJson = buildJson(
+                expectedActionName = AlarmToolOneShot.AtTime.codeName,
+                argumentsJson = buildJson(
                     "time" to time,
                     "count" to count,
                 ),

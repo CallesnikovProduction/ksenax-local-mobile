@@ -14,5 +14,4 @@ data class KsenaxWorkActionSpec(
     val name: String,
     val description: String,
     val inputHint: String,
-    val examples: List<String> = emptyList(),
 )

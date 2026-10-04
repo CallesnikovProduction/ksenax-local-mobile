@@ -1,11 +1,12 @@
 package com.kolesnikovprod.ksetaorch.communication.work.oneshot
 
 /**
- * Быстрый входной фильтр для FG one-shot action kit-а.
+ * Детерминированный фильтр набора FG one-shot actions.
  *
- * В новом G4->FG pipeline keywords не заменяют planning. Они нужны для
- * быстрых локальных shortcuts, диагностики и выбора релевантного маленького
- * набора actions, если верхний уровень уже знает намерение.
+ * Фильтр применяется только после того, как FunctionGemma классифицировала
+ * запрос как direct. Он не выбирает конкретную функцию, не формирует ответ и
+ * не запускает executor; его единственная роль — не отправлять 270M-модели
+ * несвязанные declarations.
  *
  * @since 0.2
  * @author Stephan Kolesnikov

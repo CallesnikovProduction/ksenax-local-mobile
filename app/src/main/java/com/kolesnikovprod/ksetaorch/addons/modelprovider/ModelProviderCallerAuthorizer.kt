@@ -189,6 +189,11 @@ internal class ModelProviderCallerAuthorizer(
     }
 }
 
+/**
+ * Результат проверки Binder caller и запрошенной host capability.
+ *
+ * @since 0.4
+ */
 internal sealed interface ModelProviderAuthorization {
 
     data object Authorized : ModelProviderAuthorization
