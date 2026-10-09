@@ -174,6 +174,17 @@ SavedStateHandle и не передаёт предыдущие turn-ы моде�
 Streaming delta хранится только в UI state. Итоговый или остановленный ответ
 записывается в Room одним сообщением.
 
+SPEC-001C (0.4): Basic читает историю для нового turn-а через
+`repository.observeChat(id).first()`, не из кэша UI-уведомлений. Оба coordinator-а
+публикуют `KsenaxChatStreamEvent`; prompts и persistent/ephemeral семантика прежние.
+Chat ViewModel принимает `KsenaxModelIntegrityVerifier` и монотонные часы с
+Android default для JVM-тестов. Допуск/busy фиксируется до первого suspend;
+generation входит в cleanup через CoroutineStart.UNDISPATCHED до первого suspend.
+Stop до persistence убирает только несохранённый transient, не draft.
+Basic сохраняет partial при отмене viewModelScope в handler-е, а не onCleared.
+Temporaric отменяет pending gate при exit/new/leave. Runtime не закрывается
+ViewModel: владельцем остаётся application. Cancellation после cleanup пробрасывается.
+
 `modelGateState == Ready` не является вечным разрешением. Перед следующим
 turn-ом chat ViewModel также спрашивает integrity controller, действует ли
 успешная проверка в текущей foreground-сессии. После ухода приложения в

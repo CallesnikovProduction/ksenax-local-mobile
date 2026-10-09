@@ -8,13 +8,13 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.kolesnikovprod.ksetaorch.KsenaxAndroidApplication
 import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxBasicChatCoordinator
-import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxBasicChatEvent
+import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxChatStreamEvent
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.KsenaxChatRepository
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxMessageRole
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredChat
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredChatMode
 import com.kolesnikovprod.ksetaorch.storage.chat.domain.model.KsenaxStoredMessage
-import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaIntegrityController
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelIntegrityVerifier
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationResult
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationStage
 import com.kolesnikovprod.ksetaorch.ui.main.model.toPresentationChat
@@ -31,6 +31,7 @@ import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.internal.onUserMsgP
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.internal.onVerificationCancelled
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.internal.toCoordinatorHistory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
@@ -39,7 +40,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -96,8 +99,13 @@ class KsenaxBasicChatViewModel(
     private val savedStateHandle:    SavedStateHandle,
     private val chatRepository:      KsenaxChatRepository,
     private val chatCoordinator:     KsenaxBasicChatCoordinator,
-    private val integrityController: KsenaxGemmaIntegrityController,
+    private val integrityController: KsenaxModelIntegrityVerifier,
     val modelTitle:                  String,
+    /** Монотонные часы; Android default не меняется при подстановке JVM-тестов.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    private val elapsedRealtime: () -> Long = { SystemClock.elapsedRealtime() },
 ) : ViewModel() {
 
     /*
@@ -162,11 +170,6 @@ class KsenaxBasicChatViewModel(
      */
 
     /**
-     * Локальный кэш последнего списка чатов из репозитория.
-     */
-    private var latestStoredChats: List<KsenaxStoredChat> = emptyList()
-
-    /**
      * Корутинная работа валидации файла модели.
      */
     private var verificationJob: Job? = null
@@ -221,8 +224,6 @@ class KsenaxBasicChatViewModel(
             // Каждый раз, когда репозиторий меняется по спискам чатов, то сюда
             // приходит свежий chats.
             chatRepository.chats.collect { chats ->
-                latestStoredChats = chats // локальный снапшот последнего состояния репо
-
 
                 val basicChats = chats
                     .filter { chat -> chat.mode == KsenaxStoredChatMode.Basic }
@@ -309,6 +310,7 @@ class KsenaxBasicChatViewModel(
         isInitialMessage: Boolean,
     ) {
         verificationJob?.cancel() // отмена предыдущей проверки
+        mutableUiState.update { it.copy(modelGateState = KsenaxBasicModelGateState.CheckingPresence) }
         verificationJob = viewModelScope.launch {
             val result = integrityController.verifyOnce { stage ->
                 mutableUiState.update { state ->
@@ -488,7 +490,8 @@ class KsenaxBasicChatViewModel(
     private fun KsenaxBasicChatUiState.canSubmit(
         messageText: String
     ): Boolean {
-        return messageText.isNotEmpty() && !isGenerating && !modelGateState.isBlockingSubmission
+        return messageText.isNotEmpty() && !isGenerating && !modelGateState.isBlockingSubmission &&
+            generationJob?.isActive != true && verificationJob?.isActive != true
     }
 
     private val KsenaxBasicModelGateState.isBlockingSubmission: Boolean
@@ -521,14 +524,19 @@ class KsenaxBasicChatViewModel(
         generationJob?.cancel()
         // сброс флага
         shouldPersistCancelledGeneration = false
-        generationJob = viewModelScope.launch {
-            val historyBeforeTurn = activeStoredChat()
-                ?.messages
-                .orEmpty()
-                .toCoordinatorHistory()
-
+        // Запрос уже принят: запись в Room тоже входит в его lifecycle.
+        // До первого suspend второй send и выбор чата должны быть заблокированы.
+        mutableUiState.update { it.copy(isGenerating = true, errorMessage = null) }
+        // Входим в try/finally до возврата submit: немедленный Stop не может
+        // отменить ещё не начатое тело и оставить зарезервированный busy навсегда.
+        generationJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var userMessageCommitted = false
             try {
+                // История принадлежит repository: UI Flow может ещё не получить
+                // уведомление о завершённой записи предыдущего ответа.
+                val historyBeforeTurn = activeStoredChat()?.messages.orEmpty().toCoordinatorHistory()
                 val chatId = persistUserMessage(messageText)
+                userMessageCommitted = true
                 savedStateHandle[ACTIVE_CHAT_ID_STATE_KEY] = chatId
                 mutableUiState.update { state ->
                     state.onGenerationStarted(chatId)
@@ -542,7 +550,7 @@ class KsenaxBasicChatViewModel(
                 }
 
                 // Не зависит от изменения системных часов.
-                val startedAtMillis = SystemClock.elapsedRealtime()
+                val startedAtMillis = elapsedRealtime()
 
                 try {
                     chatCoordinator.streamReply(
@@ -550,14 +558,14 @@ class KsenaxBasicChatViewModel(
                         history  = historyBeforeTurn,
                     ).collect { event ->
                         when (event) {
-                            is KsenaxBasicChatEvent.TextDelta -> {
+                            is KsenaxChatStreamEvent.TextDelta -> {
                                 mutableUiState.update { state ->
                                     // каждый кусочек добавляется в конец...
                                     state.appendAssistantDelta(event.text)
                                 }
                             }
 
-                            is KsenaxBasicChatEvent.Completed -> {
+                            is KsenaxChatStreamEvent.Completed -> {
                                 val finalText = event.text.ifBlank {
                                     mutableUiState.value.streamingAssistantText
                                 }
@@ -569,10 +577,13 @@ class KsenaxBasicChatViewModel(
                             }
                         }
                     }
-                } catch (_: CancellationException) {
-                    if (shouldPersistCancelledGeneration) {
+                } catch (cancellation: CancellationException) {
+                    // Lifecycle отменяет viewModelScope до onCleared(), поэтому
+                    // сохранение при уничтожении зависит от scope, не от позднего callback.
+                    if (shouldPersistCancelledGeneration || !viewModelScope.isActive) {
                         persistCancelledAssistantMessage(chatId, startedAtMillis)
                     }
+                    throw cancellation
                 } catch (error: Exception) {
                     val partialText = mutableUiState.value.streamingAssistantText
                     if (partialText.isNotBlank()) {
@@ -581,7 +592,7 @@ class KsenaxBasicChatViewModel(
                                 chatId                   = chatId,
                                 text                     = partialText,
                                 generationDurationMillis =
-                                    SystemClock.elapsedRealtime() - startedAtMillis,
+                                    elapsedRealtime() - startedAtMillis,
                             )
                         }
                     }
@@ -590,7 +601,10 @@ class KsenaxBasicChatViewModel(
                     }
                 }
             } catch (error: Exception) {
-                if (error is CancellationException) throw error
+                if (error is CancellationException) {
+                    if (!userMessageCommitted) mutableUiState.update { it.copy(transientUserText = null) }
+                    throw error
+                }
                 mutableUiState.update { state ->
                     state.onUserMsgPersistErrored(error)
                 }
@@ -617,9 +631,9 @@ class KsenaxBasicChatViewModel(
         }
     }
 
-    private fun activeStoredChat(): KsenaxStoredChat? {
+    private suspend fun activeStoredChat(): KsenaxStoredChat? {
         val activeChatId = mutableUiState.value.activeChatId ?: return null
-        return latestStoredChats.firstOrNull { chat -> chat.id == activeChatId }
+        return chatRepository.observeChat(activeChatId).first()
     }
 
     fun onStopGeneration() {
@@ -690,7 +704,7 @@ class KsenaxBasicChatViewModel(
                 chatId = chatId,
                 text = mutableUiState.value.streamingAssistantText,
                 generationDurationMillis =
-                    SystemClock.elapsedRealtime() - startedAtMillis,
+                    elapsedRealtime() - startedAtMillis,
             )
         }
     }
@@ -719,7 +733,7 @@ class KsenaxBasicChatViewModel(
      * @since 0.2
      */
     fun onChatSelected(chatId: Long) {
-        if (mutableUiState.value.isGenerating) return
+        if (mutableUiState.value.isGenerating || mutableUiState.value.isScreenBlocked) return
         mutableUiState.update { state ->
             state.onActiveSelected(chatId)
         }
@@ -875,28 +889,6 @@ class KsenaxBasicChatViewModel(
         mutableUiState.update { state ->
             state.onModelGateFailed(message, stage)
         }
-    }
-
-    /**
-     * Завершает активную генерацию при уничтожении ViewModel.
-     *
-     * Если streaming job ещё активна, помечает отмену как сохраняемую и отменяет
-     * generation coroutine. Дальнейшее сохранение partial assistant response
-     * выполняется внутри generation lifecycle: catch-блок для [CancellationException]
-     * увидит [shouldPersistCancelledGeneration] и выполнит persist в
-     * [NonCancellable]-контексте.
-     *
-     * Это защищает пользователя от потери уже сгенерированного текста при уходе
-     * с экрана или уничтожении ViewModel scope.
-     *
-     * @since 0.2
-     */
-    override fun onCleared() {
-        if (generationJob?.isActive == true) {
-            shouldPersistCancelledGeneration = true
-            generationJob?.cancel()
-        }
-        super.onCleared()
     }
 
     /**

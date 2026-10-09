@@ -27,9 +27,9 @@ class KsenaxTemporaricChatCoordinatorTest {
         assertEquals(listOf("raw prompt"), session.ephemeralPrompts)
         assertEquals(
             listOf(
-                KsenaxTemporaricChatEvent.TextDelta("raw "),
-                KsenaxTemporaricChatEvent.TextDelta("answer"),
-                KsenaxTemporaricChatEvent.Completed("raw answer", 42L),
+                KsenaxChatStreamEvent.TextDelta("raw "),
+                KsenaxChatStreamEvent.TextDelta("answer"),
+                KsenaxChatStreamEvent.Completed("raw answer", 42L),
             ),
             events,
         )

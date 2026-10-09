@@ -17,6 +17,41 @@ import org.junit.Test
  * @since 0.4
  */
 class ObsidianNoteOneShotToolModuleTest {
+    @Test fun `polite discussion of writing is not permission to write`() {
+        val module = ObsidianNoteOneShotToolModule(FakeExecutor)
+        assertThrows(IllegalArgumentException::class.java) {
+            module.validateSourceCall("Пожалуйста, расскажи, как создать заметку", ObsidianNoteOneShot.Write.codeName)
+        }
+    }
+
+    @Test fun `verbs in note topic do not require another operation`() {
+        val module = ObsidianNoteOneShotToolModule(FakeExecutor)
+        val text = "Создай заметку о том, как проанализировать текст"
+        val call = KsenaxToolCall("s1", ObsidianNoteOneShot.Write.codeName, KsenaxRawToolArgumentsObject("{}"), false, KsenaxToolRiskLevel.LOW)
+        module.validateSourceCall(text, call.name)
+        module.validatePlannedInputs(text, java.time.ZonedDateTime.now(), listOf(call))
+        assertThrows(IllegalArgumentException::class.java) { module.validateSourceCall(text, ObsidianNoteOneShot.AppendAnalysis.codeName) }
+    }
+
+    @Test fun `new analysis command after note topic must remain in plan`() {
+        val module = ObsidianNoteOneShotToolModule(FakeExecutor)
+        val text = "Создай заметку об архитектуре и проанализируй заметку"
+        val write = KsenaxToolCall("s1", ObsidianNoteOneShot.Write.codeName, KsenaxRawToolArgumentsObject("{}"), false, KsenaxToolRiskLevel.LOW)
+        val analysis = write.copy(id = "s2", name = ObsidianNoteOneShot.AppendAnalysis.codeName)
+        module.validateSourceCall(text, write.name)
+        module.validateSourceCall(text, analysis.name)
+        module.validatePlannedInputs(text, java.time.ZonedDateTime.now(), listOf(write, analysis))
+        assertThrows(IllegalArgumentException::class.java) { module.validatePlannedInputs(text, java.time.ZonedDateTime.now(), listOf(write)) }
+    }
+
+    @Test fun `template placeholder is not generated note content`() {
+        val module = ObsidianNoteOneShotToolModule(FakeExecutor)
+        assertThrows(IllegalArgumentException::class.java) {
+            module.resolveExecutableCall("Создай заметку про архитектуру", KsenaxWorkPlanStep("s1", "obsidian_note_write",
+                "Создай заметку", """{"title":"Архитектура","markdown_body":"# Архитектура\n\n[Здесь будет полный Markdown-текст]"}"""),
+                KsenaxToolCall("s1", "obsidian_note_write", KsenaxRawToolArgumentsObject("{}"), false, KsenaxToolRiskLevel.LOW))
+        }
+    }
 
     @Test
     fun `resolveExecutableCall maps planner typo tilte to executor title`() {

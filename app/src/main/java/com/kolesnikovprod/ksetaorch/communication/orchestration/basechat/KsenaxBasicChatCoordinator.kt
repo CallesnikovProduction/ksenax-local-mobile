@@ -2,10 +2,8 @@ package com.kolesnikovprod.ksetaorch.communication.orchestration.basechat
 
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelRequest
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelSession
-import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelStreamEvent
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelTaskProfile
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 
 /**
  * Внешняя граница обычного чата для ViewModel.
@@ -13,7 +11,7 @@ import kotlinx.coroutines.flow.map
  * Координатор скрывает от presentation-слоя устройство model-session:
  * ViewModel не формирует [KsenaxModelRequest], не выбирает профиль и не хранит
  * системную инструкцию. Она передаёт пользовательский текст в [streamReply] и
- * получает поток [KsenaxBasicChatEvent].
+ * получает поток [KsenaxChatStreamEvent].
  *
  * Этот класс не относится к agent routing. Он не собирает tool-схемы, не
  * применяет policy и не исполняет Android-действия.
@@ -49,9 +47,9 @@ class KsenaxBasicChatCoordinator(
      * Отправляет сообщение в persistent conversation и потоково возвращает
      * ответ обычного ассистента.
      *
-     * Flow начинает работу только после `collect`. Каждый [KsenaxBasicChatEvent.TextDelta]
+     * Flow начинает работу только после `collect`. Каждый [KsenaxChatStreamEvent.TextDelta]
      * нужно дописать к текущему сообщению ассистента. Событие
-     * [KsenaxBasicChatEvent.Completed] содержит итоговый текст для сохранения и
+     * [KsenaxChatStreamEvent.Completed] содержит итоговый текст для сохранения и
      * синхронизации состояния.
      *
      * Для остановки генерации ViewModel отменяет корутину, которая собирает
@@ -64,7 +62,7 @@ class KsenaxBasicChatCoordinator(
     fun streamReply(
         userText: String,
         history: List<KsenaxBasicChatHistoryMessage> = emptyList(),
-    ): Flow<KsenaxBasicChatEvent> {
+    ): Flow<KsenaxChatStreamEvent> {
         val normalizedText = userText.trim()
         require(normalizedText.isNotEmpty()) {
             "Chat user text must not be blank."
@@ -76,20 +74,7 @@ class KsenaxBasicChatCoordinator(
             profile = KsenaxModelTaskProfile.CHAT,
         )
 
-        return modelSession.streamPersistent(request).map { event ->
-            when (event) {
-                is KsenaxModelStreamEvent.TextDelta -> {
-                    KsenaxBasicChatEvent.TextDelta(event.text)
-                }
-
-                is KsenaxModelStreamEvent.Completed -> {
-                    KsenaxBasicChatEvent.Completed(
-                        text = event.response.text,
-                        latencyMs = event.response.latencyMs,
-                    )
-                }
-            }
-        }
+        return modelSession.streamPersistent(request).toChatEvents()
     }
 
     /**
@@ -143,47 +128,19 @@ class KsenaxBasicChatCoordinator(
 /**
  * Одно сохранённое сообщение, передаваемое coordinator-у для восстановления
  * контекста после пересоздания процесса или переключения между чатами.
+ * @author Stephan Kolesnikov
+ * @since 0.4
  */
 data class KsenaxBasicChatHistoryMessage(
     val role: KsenaxBasicChatRole,
     val text: String,
 )
 
+/** Роль сохранённого текстового сообщения в контексте обычного чата.
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
 enum class KsenaxBasicChatRole {
     User,
     Assistant,
-}
-
-/**
- * Событие обычного чата, которое получает ViewModel.
- *
- * Контракт не раскрывает LiteRT-LM и внутренние model DTO. Presentation-слой
- * работает только с добавочным текстом и итогом завершённого ответа.
- *
- * @since 0.2
- * @author Stephan Kolesnikov
- */
-sealed interface KsenaxBasicChatEvent {
-
-    /**
-     * Фрагмент, который нужно дописать к отображаемому ответу ассистента.
-     *
-     * @since 0.2
-     */
-    data class TextDelta(
-        val text: String,
-    ) : KsenaxBasicChatEvent
-
-    /**
-     * Итог успешно завершённой генерации.
-     *
-     * [text] содержит полный ответ, а [latencyMs] время генерации в
-     * миллисекундах.
-     *
-     * @since 0.2
-     */
-    data class Completed(
-        val text: String,
-        val latencyMs: Long,
-    ) : KsenaxBasicChatEvent
 }

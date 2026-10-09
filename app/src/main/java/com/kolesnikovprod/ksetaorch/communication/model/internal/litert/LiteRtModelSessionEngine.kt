@@ -7,6 +7,8 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.tool
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelFunctionRequest
@@ -213,7 +215,14 @@ internal class LiteRtModelSessionEngine(
             initEngineIfNeeded()
             withContext(Dispatchers.Default) {
                 val startedAtNanos = System.nanoTime()
-                val text = createConversation(request.systemInstruction).use { oneShotConversation ->
+                val conversation = if (request.profile == KsenaxModelTaskProfile.ROUTER) {
+                    NativeConversationFactory.create(requireNotNullEngine(), ConversationConfig(
+                        systemInstruction = Contents.of(request.systemInstruction),
+                        samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0),
+                        extraContext = mapOf("enable_thinking" to false),
+                    ))
+                } else createConversation(request.systemInstruction)
+                val text = conversation.use { oneShotConversation ->
                     try {
                         when (request.profile) {
                             KsenaxModelTaskProfile.ROUTER,
@@ -324,13 +333,14 @@ internal class LiteRtModelSessionEngine(
     ): KsenaxModelFunctionResponse = withContext(Dispatchers.Default) {
         inferenceMutex.withLock {
             initEngineIfNeeded()
-            requireNotNullEngine().createConversation(
+            NativeConversationFactory.create(requireNotNullEngine(),
                 ConversationConfig(
                     systemInstruction = Contents.of(request.systemInstruction),
                     tools = request.functions.map { tool(FunctionCallAdapter(it)) },
                     automaticToolCalling = false,
                     samplerConfig = SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0),
                 ),
+                constrainedFunctions = true,
             ).use { conversation ->
                 val started = System.nanoTime()
                 val calls = mutableListOf<KsenaxModelFunctionCall>()
@@ -358,7 +368,7 @@ internal class LiteRtModelSessionEngine(
         }
         inferenceMutex.withLock {
             initEngineIfNeeded()
-            val conversation = requireNotNullEngine().createConversation(
+            val conversation = NativeConversationFactory.create(requireNotNullEngine(),
                 ConversationConfig(),
             )
             val responseText = StringBuilder()
@@ -484,7 +494,7 @@ internal class LiteRtModelSessionEngine(
      * @since 0.2
      */
     private fun createConversation(systemInstruction: String): Conversation =
-        requireNotNullEngine().createConversation(
+        NativeConversationFactory.create(requireNotNullEngine(),
             ConversationConfig(
                 systemInstruction = Contents.of(systemInstruction),
             )
@@ -672,5 +682,24 @@ internal class LiteRtModelSessionEngine(
     private fun KsenaxLiteRtAudioBackend.toLiteRtBackend(): Backend =
         when (this) {
             KsenaxLiteRtAudioBackend.CPU -> Backend.CPU()
+        }
+}
+
+/** SDK 0.13.1 захватывает общий флаг grammar при создании Conversation.
+ * Сериализуем только создание: FG получает grammar, обычный текст — нет.
+ * Inference разных engines не удерживает этот lock.
+ * @author Stephan Kolesnikov
+ * @since 0.4
+ */
+@OptIn(ExperimentalApi::class)
+private object NativeConversationFactory {
+    private val creationLock = Any()
+
+    fun create(engine: Engine, config: ConversationConfig, constrainedFunctions: Boolean = false): Conversation =
+        synchronized(creationLock) {
+            val previous = ExperimentalFlags.enableConversationConstrainedDecoding
+            ExperimentalFlags.enableConversationConstrainedDecoding = constrainedFunctions
+            try { engine.createConversation(config) }
+            finally { ExperimentalFlags.enableConversationConstrainedDecoding = previous }
         }
 }

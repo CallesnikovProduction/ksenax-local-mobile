@@ -15,8 +15,9 @@ internal object FastRequestConstraints {
     }
 
     fun isUnsafeStatement(text: String): Boolean =
-        Regex("""(?<![\p{L}\p{N}])(не\s+(включ\p{L}*|выключ\p{L}*|став\p{L}*|постав\p{L}*|удал\p{L}*|очист\p{L}*|отключ\p{L}*|убер\p{L}*|созда\p{L}*|добав\p{L}*|разбуд\p{L}*|буди)|надо\s+быть|нужно\s+быть)(?![\p{L}\p{N}])""")
-            .containsMatchIn(text.lowercase()) || text.contains("что-нибудь", ignoreCase = true)
+        Regex("""(?<![\p{L}\p{N}])(не\s+(включ\p{L}*|выключ\p{L}*|заж\p{L}*|погас\p{L}*|гаси\p{L}*|вруб\p{L}*|выруб\p{L}*|став\p{L}*|постав\p{L}*|удал\p{L}*|очист\p{L}*|отключ\p{L}*|убер\p{L}*|созда\p{L}*|добав\p{L}*|разбуд\p{L}*|буди|хочу|нужно|надо|нужен|нужна|нужны)|надо\s+быть|нужно\s+быть)(?![\p{L}\p{N}])""")
+            .containsMatchIn(text.lowercase()) || text.contains("что-нибудь", ignoreCase = true) ||
+            Regex("^(можно ли|стоит ли)\\s", RegexOption.IGNORE_CASE).containsMatchIn(text.trim())
 
     // Не используем \b: его Unicode-семантика различается между Android и JVM.
     private val generation = Regex("""(?<![\p{L}\p{N}])(замет\p{L}*|obsidian|конспект\p{L}*|анализ\p{L}*|проанализ\p{L}*|сформулир\p{L}*|состав\p{L}*|список|напиши|сочини|объясни|расскажи|переведи|сравни|посоветуй)(?![\p{L}\p{N}])""")

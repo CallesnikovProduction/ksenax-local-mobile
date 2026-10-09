@@ -36,48 +36,37 @@ internal class G4PlanningPromptFactory(
         }
 
         val prompt = buildString {
-            appendLine("Role: deterministic Ksenax action planner. Never execute actions.")
-            appendLine("Output: exactly one compact JSON object, without Markdown or prose.")
-            appendLine("Each plan step is one atomic FG action and executes in array order.")
+            appendLine("Plan the requested Android actions. Do not execute, chat, or explain the plan.")
+            appendLine("Return one compact raw JSON object, starting with { and ending with }. No Markdown fences. Escape newlines inside strings as \\n.")
             appendLine("Current local date-time: $nowIso")
             appendLine()
-            appendLine("Atomic actions (code | input | meaning):")
+            appendLine("Available actions (code | input | meaning):")
             actionSpecs.forEach { spec ->
                 appendLine("- ${spec.name} | ${spec.inputHint} | ${spec.description}")
             }
             appendLine()
-            appendLine("Allowed outputs:")
-            appendLine(
-                "{\"type\":\"plan\",\"comment\":\"short hidden Russian progress comment\"," +
-                    "\"steps\":[{\"id\":\"step_1\",\"action\":\"exact_action_code\"," +
-                    "\"instruction\":\"short FG command\",\"comment\":\"short hidden Russian action comment\"," +
-                    "\"input\":{}}]}"
-            )
-            appendLine(
-                "{\"type\":\"clarification\",\"question\":\"short Russian question\"," +
-                    "\"comment\":\"short hidden reason\"}"
-            )
-            appendLine(
-                "{\"type\":\"refusal\",\"reason\":\"short Russian reason\"," +
-                    "\"code\":\"UNSUPPORTED_ACTION\",\"comment\":\"short hidden reason\"}"
-            )
+            appendLine("Formats: plan={\"type\":\"plan\",\"steps\":[{\"action\":\"listed_code\",\"input\":{}}]}; " +
+                "clarification={\"type\":\"clarification\",\"question\":\"Russian question\"}; " +
+                "refusal={\"type\":\"refusal\",\"reason\":\"Russian reason\"}.")
+            appendLine("Optional comment is short Russian progress metadata, not an extra step.")
+            appendLine("Each step MUST contain its action AND input together. Input is never a separate step.")
+            if (actionSpecs.any { it.name == "alarm_after_minutes" }) {
+                appendLine("Complete example, values are unrelated to the user request: " +
+                    "{\"type\":\"plan\",\"steps\":[{\"action\":\"alarm_after_minutes\",\"input\":{\"minutes\":12,\"count\":2}}]}")
+            }
             appendLine()
             appendLine("Hard rules:")
-            appendLine("- Use only action codes listed above; never invent a tool or field name.")
-            appendLine("- Preserve ALL requested actions, including mixed note + alarm/calendar requests. Never silently drop an intent.")
-            appendLine("- A fact such as 'I must be at work at seven' is NOT a command to create an alarm.")
+            appendLine("- Only listed actions and their fields. Preserve ALL requested actions and every explicit fact, name, date, time, quantity, unit and emotion.")
+            appendLine("- Questions, facts, quotations, negations and discussion of a tool are NOT commands to execute it.")
             appendLine("- For alarms, system Clock supports only the next 24 hours (including count N at 5-minute gaps); refuse later dates.")
-            appendLine("- Preserve every explicit name, fact, date, time, number, unit, emotion, and requested wording.")
             appendLine("- Keep numeric JSON fields numeric. Never swap hours, minutes, count, date, or clock time.")
             appendLine("- A bulk alarm request with count N is one alarm action with exact count N, not N plan steps.")
             appendLine("- Use multiple steps only for multiple actions or a real dependency; order them by dependency.")
-            appendLine("- Every input is a JSON object containing only fields needed by that action.")
             appendLine("- If a required value cannot be derived, return clarification instead of guessing.")
-            appendLine("- For note write include title and markdown_body with the complete requested content, not a restatement of the command.")
+            appendLine("- For note write include title and markdown_body with finished Markdown now: not a command, template, placeholder or promise. For a topic without source text, write 3-6 specific sentences; for provided text preserve its details.")
             appendLine("- For note analysis include title and analysis_markdown with concrete generated analysis.")
             appendLine("- For calendar use one start_local_date_time as yyyy-MM-dd'T'HH:mm; never calculate epoch millis or alternative delay/all_day fields. Missing exact time requires clarification.")
             appendLine("- Resolve Russian date/time words against Current local date-time: 'восьмое июля' means YYYY-07-08, 'семнадцать часов вечера' means 17:00.")
-            appendLine("- Agentic mode does not chat. If no action is possible, return clarification or refusal.")
             appendLine()
             appendLine("User request:")
             append(userText)
@@ -86,7 +75,7 @@ internal class G4PlanningPromptFactory(
         return KsenaxModelRequest(
             prompt = prompt,
             systemInstruction =
-                "You are a deterministic Android action planner. Return exactly one allowed JSON object.",
+                "You are a deterministic Android action planner. Return one raw JSON object without Markdown fences. Generate finished Russian note content inside markdown_body; do not defer writing it.",
             profile = KsenaxModelTaskProfile.ROUTER,
         )
     }

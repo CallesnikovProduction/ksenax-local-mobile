@@ -6,8 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.kolesnikovprod.ksetaorch.KsenaxAndroidApplication
 import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxTemporaricChatCoordinator
-import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxTemporaricChatEvent
-import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaIntegrityController
+import com.kolesnikovprod.ksetaorch.communication.orchestration.basechat.KsenaxChatStreamEvent
+import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxModelIntegrityVerifier
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationResult
 import com.kolesnikovprod.ksetaorch.ui.controllers.modelvalidation.KsenaxGemmaVerificationStage
 import com.kolesnikovprod.ksetaorch.ui.main.settings.KsenaxSupportedTextModel
@@ -16,6 +16,7 @@ import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.KSENAX_MODEL_VERIFICATION
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelFailureStage
 import com.kolesnikovprod.ksetaorch.ui.viewmodels.chat.basic.KsenaxBasicModelGateState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -38,8 +39,13 @@ import kotlinx.coroutines.launch
  */
 class KsenaxTemporaricChatViewModel(
     private val chatCoordinator: KsenaxTemporaricChatCoordinator,
-    private val integrityController: KsenaxGemmaIntegrityController,
+    private val integrityController: KsenaxModelIntegrityVerifier,
     val modelTitle: String,
+    /** Часы длительности; production использует прежний SystemClock.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    private val elapsedRealtime: () -> Long = { SystemClock.elapsedRealtime() },
 ) : ViewModel() {
 
     private val mutableUiState = MutableStateFlow(KsenaxTemporaricChatUiState())
@@ -114,7 +120,8 @@ class KsenaxTemporaricChatViewModel(
         if (
             messageText.isEmpty() ||
             state.isGenerating ||
-            state.isScreenBlocked
+            state.isScreenBlocked ||
+            generationJob?.isActive == true || verificationJob?.isActive == true
         ) {
             return false
         }
@@ -145,6 +152,7 @@ class KsenaxTemporaricChatViewModel(
 
     private fun startModelVerification(messageText: String) {
         verificationJob?.cancel()
+        mutableUiState.update { it.copy(modelGateState = KsenaxBasicModelGateState.CheckingPresence) }
         verificationJob = viewModelScope.launch {
             when (
                 val result = integrityController.verifyOnce { stage ->
@@ -207,8 +215,10 @@ class KsenaxTemporaricChatViewModel(
     private fun generateReply(messageText: String) {
         generationJob?.cancel()
         commitPartialOnCancellation = false
-        generationJob = viewModelScope.launch {
-            val startedAtMillis = SystemClock.elapsedRealtime()
+        mutableUiState.update { it.copy(isGenerating = true, errorMessage = null) }
+        // Cleanup должен существовать и для Stop сразу после принятия запроса.
+        generationJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val startedAtMillis = elapsedRealtime()
             mutableUiState.update { state ->
                 state.copy(
                     streamingAssistantText = "",
@@ -220,7 +230,7 @@ class KsenaxTemporaricChatViewModel(
             try {
                 chatCoordinator.streamReply(messageText).collect { event ->
                     when (event) {
-                        is KsenaxTemporaricChatEvent.TextDelta ->
+                        is KsenaxChatStreamEvent.TextDelta ->
                             mutableUiState.update { state ->
                                 state.copy(
                                     streamingAssistantText =
@@ -228,7 +238,7 @@ class KsenaxTemporaricChatViewModel(
                                 )
                             }
 
-                        is KsenaxTemporaricChatEvent.Completed -> {
+                        is KsenaxChatStreamEvent.Completed -> {
                             val finalText = event.text.ifBlank {
                                 mutableUiState.value.streamingAssistantText
                             }
@@ -244,16 +254,17 @@ class KsenaxTemporaricChatViewModel(
                     commitAssistantMessage(
                         text = mutableUiState.value.streamingAssistantText,
                         generationDurationMillis =
-                            SystemClock.elapsedRealtime() - startedAtMillis,
+                            elapsedRealtime() - startedAtMillis,
                     )
                 }
+                throw cancellation
             } catch (error: Exception) {
                 val partialText = mutableUiState.value.streamingAssistantText
                 if (partialText.isNotBlank()) {
                     commitAssistantMessage(
                         text = partialText,
                         generationDurationMillis =
-                            SystemClock.elapsedRealtime() - startedAtMillis,
+                            elapsedRealtime() - startedAtMillis,
                     )
                 }
                 mutableUiState.update { state ->
@@ -320,6 +331,7 @@ class KsenaxTemporaricChatViewModel(
      * @since 0.4
      */
     fun onExitRequested() {
+        cancelPendingVerification()
         if (mutableUiState.value.isGenerating) {
             exitAfterGeneration = true
             onStopGeneration()
@@ -335,6 +347,7 @@ class KsenaxTemporaricChatViewModel(
      * @since 0.4
      */
     fun onLeaveForNavigation() {
+        cancelPendingVerification()
         if (mutableUiState.value.isGenerating) {
             onStopGeneration()
         }
@@ -346,6 +359,7 @@ class KsenaxTemporaricChatViewModel(
      * @since 0.4
      */
     fun onNewChatClick() {
+        cancelPendingVerification()
         if (mutableUiState.value.isGenerating) {
             clearBeforeExit = true
             exitAfterGeneration = true
@@ -362,8 +376,15 @@ class KsenaxTemporaricChatViewModel(
      * @since 0.4
      */
     fun onCancelVerification() {
-        verificationJob?.cancel()
+        cancelPendingVerification()
         clearSession()
+    }
+
+    private fun cancelPendingVerification() {
+        if (verificationJob?.isActive != true) return
+        verificationJob?.cancel()
+        verificationJob = null
+        mutableUiState.update { it.copy(modelGateState = KsenaxBasicModelGateState.Idle) }
     }
 
     private fun clearSession() {

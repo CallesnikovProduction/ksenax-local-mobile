@@ -25,6 +25,36 @@ class ObsidianNoteOneShotToolModule(override val executor: KsenaxToolExecutor) :
     override val protocol: KsenaxOneShotToolProtocol = ObsidianNoteOneShotProtocol
     override val exposePlannerInputToFunctionGemma = false
 
+    override fun validateSourceRequest(userMessage: String) {
+        if (requestedOperations(userMessage).isEmpty()) throw MissingActionArgument("явную команду записи или анализа заметки")
+    }
+
+    override fun validateSourceCall(userMessage: String, actionName: String) {
+        if (actionName !in requestedOperations(userMessage)) throw MissingActionArgument("явную команду записи или анализа заметки")
+    }
+
+    override fun validatePlannedInputs(userMessage: String, requestTime: ZonedDateTime, calls: List<KsenaxToolCall>) {
+        if (!calls.map { it.name }.toSet().containsAll(requestedOperations(userMessage))) {
+            throw MissingActionArgument("все запрошенные операции с заметкой в плане")
+        }
+    }
+
+    private fun requestedOperations(userMessage: String): Set<String> = buildSet {
+        KsenaxActionSourceText.unquotedParts(userMessage).forEach { source ->
+            // Тело после двоеточия — данные заметки, не разрешение на новую операцию.
+            val head = source.substringBefore(':')
+            val domain = noteDomain.find(head) ?: return@forEach
+            // Глаголы внутри темы «заметка о том, как ...» не являются командами.
+            val topicStart = topicBoundary.find(head, domain.range.last + 1)?.range?.first ?: head.length
+            val command = head.take(topicStart)
+            val operationStart = sequenceOf(writing.find(command), desiredWriting.find(command), analysis.find(command))
+                .filterNotNull().minOfOrNull { it.range.first } ?: return@forEach
+            if (question.containsMatchIn(command.take(operationStart)) || negation.containsMatchIn(command)) return@forEach
+            if (writing.containsMatchIn(command) || desiredWriting.containsMatchIn(command)) add(ObsidianNoteOneShot.Write.codeName)
+            if (analysis.containsMatchIn(command)) add(ObsidianNoteOneShot.AppendAnalysis.codeName)
+        }
+    }
+
     override fun resolveExecutableCall(userMessage: String, step: KsenaxWorkPlanStep, compiledCall: KsenaxToolCall): KsenaxToolCall {
         val input = step.plannerInputJson?.let { Json.parseToJsonElement(it) as? JsonObject }
             ?: throw MissingActionArgument("содержимое заметки от планировщика")
@@ -36,6 +66,9 @@ class ObsidianNoteOneShotToolModule(override val executor: KsenaxToolExecutor) :
         if (body == null) throw MissingActionArgument(bodyKey)
         require(!Regex("^(запиши|создай|напиши)\\s+(заметку|и запиши)", RegexOption.IGNORE_CASE).containsMatchIn(body.trim())) {
             "Планировщик вернул команду вместо содержимого заметки."
+        }
+        require(!Regex("\\[(?:здесь|тут|сюда|insert|placeholder)[^\\]\\n]*\\]", RegexOption.IGNORE_CASE).containsMatchIn(body)) {
+            "Планировщик вернул заполнитель вместо готового содержимого заметки."
         }
         val payload = buildJsonObject {
             // Запись в ежедневную заметку — существующее правило хранения.
@@ -58,5 +91,14 @@ class ObsidianNoteOneShotToolModule(override val executor: KsenaxToolExecutor) :
         value.content.trim().takeIf(String::isNotBlank)
     }
 
-    private companion object { const val DAILY_NOTE_TITLE = "Ежедневная заметка" }
+    private companion object {
+        const val DAILY_NOTE_TITLE = "Ежедневная заметка"
+        val noteDomain = Regex("(?<![\\p{L}\\p{N}])(?:замет\\p{L}*|obsidian|конспект\\p{L}*|мысл\\p{L}*|текст\\p{L}*)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+        val question = Regex("(?<![\\p{L}\\p{N}])(?:как|почему|зачем|что|когда|если|расскажи|объясни|можно\\s+ли|стоит\\s+ли)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+        val topicBoundary = Regex("(?<![\\p{L}\\p{N}])(?:о(?:б)?|про|как|что|на\\s+тему|по\\s+теме)\\s+", RegexOption.IGNORE_CASE)
+        val negation = Regex("(?<![\\p{L}\\p{N}])не\\s+(?:созд|напиш|пиш|запиш|запис|сохр|сдел|состав|оформ|добав|допол|допиш|проанализ)\\p{L}*", RegexOption.IGNORE_CASE)
+        val writing = Regex("(?<![\\p{L}\\p{N}])(?:создай(?:те)?|создать|создавай(?:те)?|напиши(?:те)?|написать|запиши(?:те)?|записать|сохрани(?:те)?|сохранить|сделай(?:те)?|сделать|составь(?:те)?|составить|оформи(?:те)?|оформить|добавь(?:те)?|добавить)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+        val desiredWriting = Regex("(?<![\\p{L}\\p{N}])(?:хочу|хотел\\p{L}*|нужно)\\s+(?:бы\\s+)?чтобы\\s+.*?(?:создал|сделал|написал|записал|сохранил|составил|оформил)\\p{L}*(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+        val analysis = Regex("(?<![\\p{L}\\p{N}])(?:проанализируй(?:те)?|проанализировать|дополни(?:те)?|дополнить|допиши(?:те)?|дописать)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+    }
 }

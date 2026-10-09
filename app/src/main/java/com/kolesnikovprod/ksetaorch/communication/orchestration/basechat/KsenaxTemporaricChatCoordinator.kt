@@ -1,9 +1,7 @@
 package com.kolesnikovprod.ksetaorch.communication.orchestration.basechat
 
 import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelSession
-import com.kolesnikovprod.ksetaorch.communication.model.KsenaxModelStreamEvent
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 
 /**
  * Изолированный runtime-контур временного чата для проверки сырого поведения
@@ -25,34 +23,12 @@ class KsenaxTemporaricChatCoordinator(
         modelSession.initializeEngine()
     }
 
-    fun streamReply(userText: String): Flow<KsenaxTemporaricChatEvent> {
+    fun streamReply(userText: String): Flow<KsenaxChatStreamEvent> {
         val normalizedText = userText.trim()
         require(normalizedText.isNotEmpty()) {
             "TEMPORARIC_PATTERN user text must not be blank."
         }
 
-        return modelSession.streamEphemeral(normalizedText).map { event ->
-            when (event) {
-                is KsenaxModelStreamEvent.TextDelta ->
-                    KsenaxTemporaricChatEvent.TextDelta(event.text)
-
-                is KsenaxModelStreamEvent.Completed ->
-                    KsenaxTemporaricChatEvent.Completed(
-                        text = event.response.text,
-                        latencyMs = event.response.latencyMs,
-                    )
-            }
-        }
+        return modelSession.streamEphemeral(normalizedText).toChatEvents()
     }
-}
-
-sealed interface KsenaxTemporaricChatEvent {
-    data class TextDelta(
-        val text: String,
-    ) : KsenaxTemporaricChatEvent
-
-    data class Completed(
-        val text: String,
-        val latencyMs: Long,
-    ) : KsenaxTemporaricChatEvent
 }

@@ -11,6 +11,14 @@ import org.junit.Test
  * @since 0.4
  */
 class G4PlanningResponseParserTest {
+    @Test fun `accepts one exact JSON fence without repairing its body`() {
+        val json = """{"type":"plan","steps":[{"action":"torch_on","input":{}}]}"""
+        assertTrue(G4PlanningResponseParser.parse("```json\n$json\n```", setOf("torch_on")) is PlanningParseResult.Success)
+        listOf("prefix\n```json\n$json\n```", "```json\n$json\n```\nexplanation", "```json",
+            "```json\n$json$json\n```", "```json\n{\"type\":\"plan\"\n```").forEach { text ->
+            assertTrue(text, G4PlanningResponseParser.parse(text, setOf("torch_on")) is PlanningParseResult.Failure)
+        }
+    }
 
     @Test
     fun `accepts an ordered plan with allowed actions`() {

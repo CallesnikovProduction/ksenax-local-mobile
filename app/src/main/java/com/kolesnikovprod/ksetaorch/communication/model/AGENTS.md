@@ -149,6 +149,18 @@ Gemma session создаётся с `KsenaxLiteRtAudioBackend.CPU`. FunctionGemm
 
 ## Контекстное окно
 
+Native function calling использует `ExperimentalFlags.enableConversationConstrainedDecoding`:
+в SDK 0.13.1 этот общий флаг захватывается при создании Conversation. Единая
+`NativeConversationFactory` сериализует создание всех conversations: включает
+grammar только для `askFunctions`, отключает для текстовых профилей и всегда
+восстанавливает прежний флаг. Lock не удерживается во время inference.
+Общая grammar с пустым tools-каталогом обрывала G4 JSON; оставлять её включённой
+на весь процесс нельзя. Grammar ограничивает синтаксис, но не правильность
+намерения. Проверки schema/domain/policy остаются обязательными в `work`.
+`ROUTER` использует greedy sampling и `enable_thinking=false`: технический план
+не должен расходовать ограниченный контекст на скрытые рассуждения. Chat, voice
+и профиль обычной генерации эти параметры не наследуют.
+
 Внешний caller передаёт runtime-параметры через контракт:
 
 ```kotlin

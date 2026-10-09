@@ -60,6 +60,38 @@ interface KsenaxOneShotActionKit {
     fun buildFastActionDraft(userMessage: String, actionName: String, now: ZonedDateTime): KsenaxActionInputDraft? = null
 
     /**
+     * Проверяет основание действия в исходном UP, в том числе для шагов G4.
+     * Обязательна для каждого kit: не выбирает функцию и не заменяет проверку аргументов.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    fun validateSourceRequest(userMessage: String)
+
+    /**
+     * Проверяет разрешение именно выбранного действия, а не только его kit-а.
+     * Одинаково применяется к быстрому вызову и шагу плана до исполнения.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    fun validateSourceCall(userMessage: String, actionName: String) = validateSourceRequest(userMessage)
+
+    /**
+     * Проверяет обязательные исходные значения до загрузки G4, не выбирая функцию.
+     * Сгенерированный текст не требуется; kit без таких значений проверяет основание.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    fun validatePlanningSource(userMessage: String, requestTime: ZonedDateTime) = validateSourceRequest(userMessage)
+
+    /**
+     * Сверяет весь набор planned-входов kit-а с исходными ограничениями до исполнения.
+     * Не заменяет модельный выбор и не проверяет сгенерированный текст на совпадение.
+     * @author Stephan Kolesnikov
+     * @since 0.4
+     */
+    fun validatePlannedInputs(userMessage: String, requestTime: ZonedDateTime, calls: List<KsenaxToolCall>) = Unit
+
+    /**
      * Проверяет предметные ограничения перед policy и executor.
      * @author Stephan Kolesnikov
      * @since 0.4

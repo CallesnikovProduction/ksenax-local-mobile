@@ -146,7 +146,11 @@ private fun String?.normalizeType(): String =
         .trim('_')
 
 private fun String.extractJsonObject(): String {
-    val normalized = trim()
+    val trimmed = trim()
+    // Единственная допустимая оболочка не исправляет и не дополняет сам JSON.
+    val normalized = if (trimmed.startsWith("```json\n") && trimmed.endsWith("\n```")) {
+        trimmed.removePrefix("```json\n").removeSuffix("\n```").trim()
+    } else trimmed
     require(normalized.startsWith('{') && normalized.endsWith('}')) {
         "Planner response must be exactly one JSON object without surrounding prose."
     }

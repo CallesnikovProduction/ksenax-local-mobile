@@ -4,8 +4,10 @@ import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxRawToolA
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolCall
 import com.kolesnikovprod.ksetaorch.communication.tools.contracts.KsenaxToolExecutor
 import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxActionInputDraft
+import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxActionSourceText
 import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxDirectActionRoute
 import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxOneShotActionKit
+import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxPlannedInputValidator
 import com.kolesnikovprod.ksetaorch.communication.work.actions.KsenaxWorkActionSpec
 import com.kolesnikovprod.ksetaorch.communication.work.oneshot.KsenaxOneShotToolProtocol
 import com.kolesnikovprod.ksetaorch.communication.work.planning.KsenaxWorkPlanStep
@@ -73,17 +75,24 @@ class AlarmOneShotToolModule(
     override fun buildDirectActionDraft(userMessage: String): KsenaxActionInputDraft? =
         AlarmUserPromptDraft.build(userMessage)
 
+    override fun validateSourceRequest(userMessage: String) {
+        if (requestedParts(userMessage).isEmpty()) {
+            throw MissingActionArgument("явный запрос будильника или пробуждения")
+        }
+    }
+
     override fun buildFastActionDraft(userMessage: String, actionName: String, now: ZonedDateTime): KsenaxActionInputDraft? {
         if (actionName == AlarmToolOneShot.ClearAll.codeName) {
-            val normalized = LocalScheduleParser.normalize(userMessage)
-            val clearing = Regex("удал|очист|отключ|убер|снес").containsMatchIn(normalized)
-            val all = Regex("(?<![\\p{L}\\p{N}])(все|всех|полностью)(?![\\p{L}\\p{N}])").containsMatchIn(normalized)
-            if (!clearing || !all || !normalized.contains("будильник")) throw MissingActionArgument("явную команду отключения всех будильников")
+            validateSourceCall(userMessage, actionName)
             return null
         }
         val minutes = LocalScheduleParser.amount(userMessage, "мин")
         val hours = LocalScheduleParser.amount(userMessage, "час|ч\\b")
         val normalizedTime = LocalScheduleParser.normalize(userMessage)
+        if ("через" in normalizedTime && minutes == null && hours == null &&
+            Regex("(?<![\\p{L}])(?:мин\\p{L}*|час(?:а|ов)?|ч)(?![\\p{L}])").containsMatchIn(normalizedTime)) {
+            throw MissingActionArgument("однозначный поддерживаемый интервал будильника")
+        }
         if ("через" in normalizedTime && Regex("(?<![\\p{L}])(?:час(?:а|ов)?|ч)(?![\\p{L}])").containsMatchIn(normalizedTime) && "мин" in normalizedTime) {
             throw MissingActionArgument("интервал одной величиной: часы или минуты")
         }
@@ -93,7 +102,13 @@ class AlarmOneShotToolModule(
         }
         val count = explicitCount ?: 1
         val date = LocalScheduleParser.date(userMessage, now.toLocalDate())
-        val time = LocalScheduleParser.clock(userMessage)
+        if (date == null && LocalScheduleParser.hasDateExpression(userMessage)) {
+            throw MissingActionArgument("однозначную корректную дату будильника")
+        }
+        val time = LocalScheduleParser.clock(relativeInterval.replace(userMessage, " "))
+        if ((minutes != null || hours != null) && (date != null || time != null)) {
+            throw MissingActionArgument("либо относительный интервал, либо абсолютную дату и время будильника")
+        }
         val (expected, input) = when {
             minutes != null -> AlarmToolOneShot.AfterMinutes.codeName to buildJsonObject { put("minutes", minutes) }
             hours != null -> AlarmToolOneShot.AfterHours.codeName to buildJsonObject { put("hours", hours) }
@@ -104,6 +119,58 @@ class AlarmOneShotToolModule(
         val args = JsonObject(input + mapOf("count" to JsonPrimitive(count)))
         return KsenaxActionInputDraft(expectedActionName = expected, argumentsJson = args.toString(), instruction = userMessage)
     }
+
+    override fun validateSourceCall(userMessage: String, actionName: String) {
+        validateSourceRequest(userMessage)
+        if (actionName == AlarmToolOneShot.ClearAll.codeName) {
+            val authorized = KsenaxActionSourceText.executableParts(userMessage).any(::requestsClearAll)
+            if (!authorized) {
+                throw MissingActionArgument("явную команду отключения всех будильников")
+            }
+        }
+    }
+
+    override fun validatePlanningSource(userMessage: String, requestTime: ZonedDateTime) {
+        validateSourceRequest(userMessage)
+        sourceDrafts(userMessage, requestTime)
+    }
+
+    private fun sourceDrafts(userMessage: String, requestTime: ZonedDateTime): List<KsenaxActionInputDraft> =
+        requestedParts(userMessage).map { part ->
+            if (requestsClearAll(part)) KsenaxActionInputDraft(AlarmToolOneShot.ClearAll.codeName, "{}")
+            else requireNotNull(buildFastActionDraft(part, AlarmToolOneShot.AtTime.codeName, requestTime))
+        }
+
+    override fun validatePlannedInputs(userMessage: String, requestTime: ZonedDateTime, calls: List<KsenaxToolCall>) {
+        val sources = sourceDrafts(userMessage, requestTime)
+        val normalizedCalls = calls.map { call ->
+            val input = Json.parseToJsonElement(call.arguments.JSONtoString()).jsonObject.toMutableMap()
+            input["time"]?.jsonPrimitive?.content?.let { input["time"] = JsonPrimitive(LocalTime.parse(it).toString()) }
+            input["date_time"]?.jsonPrimitive?.content?.let { input["date_time"] = JsonPrimitive(LocalDateTime.parse(it).toString()) }
+            call.copy(arguments = KsenaxRawToolArgumentsObject(JsonObject(input).toString()))
+        }
+        KsenaxPlannedInputValidator.validate(normalizedCalls, sources, buildJsonObject { put("count", 1) })
+    }
+
+    private fun requestsClearAll(part: String): Boolean {
+        val text = LocalScheduleParser.normalize(part)
+        return clearingVerb.containsMatchIn(text) && allAlarms.containsMatchIn(text) && text.contains("будильник")
+    }
+
+    private fun requestedParts(text: String): List<String> = KsenaxActionSourceText.executableParts(text).filter { part ->
+        alarmDomain.containsMatchIn(part) && (alarmCommand.containsMatchIn(part) ||
+            KsenaxActionSourceText.hasExplicitNeed(part, alarmDomain) { LocalScheduleParser.quantity(it) != null } || wakeIntent.containsMatchIn(part) ||
+            nominalTime.matches(LocalScheduleParser.normalize(part)))
+    }
+
+    private val alarmDomain = Regex("будиль|разбуд|буди|просну|встав|alarm|wake", RegexOption.IGNORE_CASE)
+    private val alarmCommand = Regex("(?<![\\p{L}\\p{N}_])(?:поставь(?:те)?|поставить|ставь(?:те)?|заведи(?:те)?|завести|разбуди(?:те|ть)?|буди(?:те|ть)?|создай(?:те)?|создать|добавь(?:те)?|добавить|удали(?:те|ть)?|очисти(?:те|ть)?|отключи(?:те|ть)?|убери(?:те)?|убрать|снеси(?:те)?|снести|(?:set|wake)(?=\\s))(?![\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
+    private val wakeIntent = Regex("(?<![\\p{L}\\p{N}_])(?:надо|нужно|хочу)\\s+(?:проснуться|встать)(?![\\p{L}\\p{N}_])", RegexOption.IGNORE_CASE)
+    // Краткая команда целиком: утверждение после времени не даёт разрешения.
+    private val nominalTime = Regex("(?:будильник|будильники)\\s+(?:(?:сегодня|завтра|послезавтра)\\s+)?(?:на\\s+|в\\s+)?\\d{1,2}(?:[:.]\\d{2})?(?:\\s+(?:утра|дня|вечера|ночи))?")
+    private val relativeInterval = Regex("через\\s+[\\p{L}\\d]+(?:\\s+[\\p{L}]+)?\\s+(?:мин\\p{L}*|час(?:а|ов)?|ч)(?![\\p{L}])", RegexOption.IGNORE_CASE)
+    private val clearingVerb = Regex("удал|очист|отключ|убер|снес")
+    private val allAlarms = Regex("(?<![\\p{L}\\p{N}])(все|всех|полностью)(?![\\p{L}\\p{N}])")
 
     override fun validateExecutableCall(call: KsenaxToolCall, now: ZonedDateTime) {
         if (call.name == AlarmToolOneShot.ClearAll.codeName) return
