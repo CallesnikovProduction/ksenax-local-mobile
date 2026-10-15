@@ -11,6 +11,13 @@ import kotlinx.serialization.json.*
  * @since 0.4
  */
 internal object QwenDiagnosticPrompts {
+    fun selectionSystem(actions: List<KsenaxOneShotDeclaration>) = buildString {
+        appendLine("Classify the user's intent. Return exactly one code from the list. No JSON, XML, markdown or explanation.")
+        appendLine("Choose an action only for an explicit complete command. Missing or ambiguous required values need clarification. Questions, facts and negations do not authorize actions.")
+        appendLine("Different actions or generating/analyzing text need planning. A quantity of identical alarms is one action, not planning.")
+        nativeDeclarations(actions).forEach { appendLine("${it.name}: ${it.description}") }
+    }
+
     fun englishSystem(actions: List<KsenaxOneShotDeclaration>, now: ZonedDateTime) = buildString {
         appendLine("You are an Android intent router. Output exactly one JSON object, without markdown or explanations.")
         appendLine("For a complete supported action, route is FAST_TOOL. Include tool (one exact catalog name) and arguments (an object containing that tool's fields only).")

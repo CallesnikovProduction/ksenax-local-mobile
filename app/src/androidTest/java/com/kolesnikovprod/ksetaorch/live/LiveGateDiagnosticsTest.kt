@@ -36,13 +36,46 @@ class LiveGateDiagnosticsTest {
         check(cases.map { it.id }.toSet() == selected)
         val variants = args.getString("variants")?.split(",") ?: listOf("production_catalog", "model_kit_gate")
         require(variants.isNotEmpty() && variants.distinct().size == variants.size &&
-            variants.all { it in setOf("production_catalog", "model_kit_gate") }) { "Unknown or repeated diagnostic variant" }
+            variants.all { it in setOf("production_catalog", "model_kit_gate", "torch_catalog", "torch_precise", "torch_state", "torch_state_ru") }) { "Unknown or repeated diagnostic variant" }
         check(cases.all { it.input.toByteArray(Charsets.UTF_8).size <= FunctionGemmaRoutingProtocol.MAX_ROUTING_INPUT_BYTES }) {
             "This diagnostic compares semantic choices, not forced budget routing."
         }
         val kits = linkedMapOf("flashlight" to TorchOneShotProtocol.declarations,
             "alarm" to AlarmOneShotProtocol.declarations, "calendar" to CalendarEventOneShotProtocol.declarations)
         val catalog = FunctionGemmaRoutingProtocol(kits.values.flatten())
+        val torchCatalog = FunctionGemmaRoutingProtocol(TorchOneShotProtocol.declarations)
+        // Сужение задано экспериментом, не ожидаемым ответом конкретного запроса.
+        // Модель по-прежнему выбирает направление, планирование или отказ.
+        val preciseTorchFunctions = listOf(
+            KsenaxModelFunctionDeclaration("torch_on", "Set the device flashlight ON. Choose for a request to illuminate, enable or light it. Never choose for switching it off."),
+            KsenaxModelFunctionDeclaration("torch_off", "Set the device flashlight OFF. Choose for a request to extinguish, disable or turn it off. Never choose for switching it on."),
+            KsenaxModelFunctionDeclaration("torch_toggle", "Invert the current flashlight state ONLY when no ON or OFF direction is requested. Do not use for an explicit direction."),
+            KsenaxModelFunctionDeclaration("route_planned_work", "Generate or analyze a note or text, or perform several different actions."),
+            KsenaxModelFunctionDeclaration("route_clarification", "Ask for details when the requested action is ambiguous."),
+            KsenaxModelFunctionDeclaration("route_unsupported", "Reject a factual statement, an informational question, a negated command or an unsupported action."),
+        )
+        val preciseTorchInstruction = "You are a model that can do function calling with the following functions. " +
+            "Select exactly one function for the user's actual intent. The user may write in Russian. " +
+            "An explicit ON or OFF request must preserve that direction; toggle is not a substitute. " +
+            "A negation or a question asking how something works does not authorize switching the flashlight. " +
+            "Requests to create or analyze text need planning. Return only the function call with empty arguments."
+        val stateTorchFunctions = listOf(
+            KsenaxModelFunctionDeclaration("set_flashlight_state",
+                "Change the device flashlight state: on to illuminate, off to extinguish, toggle to invert without an explicit direction.",
+                """{"type":"object","properties":{"state":{"type":"string","enum":["on","off","toggle"],"description":"The requested resulting flashlight state."}},"required":["state"],"additionalProperties":false}"""),
+        ) + preciseTorchFunctions.filter { it.name.startsWith("route_") }
+        val russianStateFunctions = listOf(
+            KsenaxModelFunctionDeclaration("set_flashlight_state",
+                "Устанавливает состояние фонарика: on — включён и светит, off — выключен и не светит, toggle — инверсия без указанного направления.",
+                """{"type":"object","properties":{"state":{"type":"string","enum":["on","off","toggle"],"description":"Запрошенное конечное состояние фонарика."}},"required":["state"],"additionalProperties":false}"""),
+            KsenaxModelFunctionDeclaration("route_planned_work", "Создание или анализ текста, заметки; несколько разных действий."),
+            KsenaxModelFunctionDeclaration("route_clarification", "Непонятная команда: нужно уточнить смысл."),
+            KsenaxModelFunctionDeclaration("route_unsupported", "Вопрос о работе функции, факт, отрицание команды или неподдерживаемое действие. Ничего не исполнять."),
+        )
+        val russianStateInstruction = "You are a model that can do function calling with the following functions. " +
+            "Выбери ровно одну функцию по смыслу запроса. Включение и выключение — разные состояния. " +
+            "Отрицание не разрешает ни исходное, ни противоположное действие: выбери route_unsupported. " +
+            "Информационный вопрос не является командой. Создание текста и несколько разных действий требуют route_planned_work."
         val gate = listOf(
             KsenaxModelFunctionDeclaration("execute_device_action",
                 "One device command: switch flashlight, set one or several alarms with the same schedule, or create a calendar event. Choose its kit. No writing or analysis.",
@@ -91,8 +124,14 @@ class LiveGateDiagnosticsTest {
                                 .put("latencyMs", response.latencyMs)
                             return response
                         }
-                        val rootRequest = if (variant == "production_catalog") catalog.buildRequest(case.input)
-                            else KsenaxModelFunctionRequest(case.input, gate)
+                        val rootRequest = when (variant) {
+                            "production_catalog" -> catalog.buildRequest(case.input)
+                            "torch_catalog" -> torchCatalog.buildRequest(case.input)
+                            "torch_precise" -> KsenaxModelFunctionRequest(case.input, preciseTorchFunctions, preciseTorchInstruction)
+                            "torch_state" -> KsenaxModelFunctionRequest(case.input, stateTorchFunctions)
+                            "torch_state_ru" -> KsenaxModelFunctionRequest(case.input, russianStateFunctions, russianStateInstruction)
+                            else -> KsenaxModelFunctionRequest(case.input, gate)
+                        }
                         val response = ask(rootRequest)
                         require(response.calls.size == 1) { "Expected exactly one root call." }
                         val root = response.calls.single()
@@ -101,7 +140,20 @@ class LiveGateDiagnosticsTest {
                         val arguments = JSONObject(root.argumentsJson)
                         val actualTools: List<String>
                         val route: String
-                        if (variant == "model_kit_gate" && root.name == "execute_device_action") {
+                        if (variant in setOf("torch_state", "torch_state_ru") && root.name == "set_flashlight_state") {
+                            require(arguments.length() == 1 && arguments.has("state")) { "Expected only state." }
+                            val state = arguments.get("state") as? String ?: error("State must be a string.")
+                            // Это преобразование модельного enum, не интерпретация UP.
+                            val action = when (state) {
+                                "on" -> "torch_on"
+                                "off" -> "torch_off"
+                                "toggle" -> "torch_toggle"
+                                else -> error("Unknown flashlight state.")
+                            }
+                            event.put("modelSelectedState", state)
+                            route = "FAST_TOOL"
+                            actualTools = listOf(action)
+                        } else if (variant == "model_kit_gate" && root.name == "execute_device_action") {
                             require(arguments.length() == 1 && arguments.has("kit")) { "Expected only kit." }
                             val kit = arguments.get("kit") as? String ?: error("Kit must be a string.")
                             val declarations = requireNotNull(kits[kit]) { "Unknown model-selected kit." }

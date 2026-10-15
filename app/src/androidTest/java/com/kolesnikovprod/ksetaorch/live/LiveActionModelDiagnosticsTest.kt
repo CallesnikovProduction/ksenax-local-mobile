@@ -60,7 +60,7 @@ class LiveActionModelDiagnosticsTest {
         require(cases.all { it.input.toByteArray(Charsets.UTF_8).size <= FunctionGemmaRoutingProtocol.MAX_ROUTING_INPUT_BYTES })
         val variants = args.getString("variants")?.split(",") ?: listOf("native_catalog", "text_choice")
         require(variants.isNotEmpty() && variants.distinct().size == variants.size &&
-            variants.all { it in setOf("native_catalog", "text_choice", "raw_native", "structured_json", "structured_english", "native_complete", "native_envelope", "json_prefill", "hermes_text") })
+            variants.all { it in setOf("native_catalog", "text_choice", "raw_native", "structured_json", "structured_english", "native_complete", "native_envelope", "json_prefill", "hermes_text", "semantic_choice") })
         require(thinkingMode == "metadata" || variants.none { it in setOf("raw_native", "json_prefill") })
         require(officialTemplate == null || thinkingMode == "metadata" && variants.none { it in setOf("raw_native", "json_prefill") })
         require(!enableThinking || thinkingMode == "metadata" && variants.none { it in setOf("raw_native", "json_prefill") })
@@ -107,12 +107,13 @@ class LiveActionModelDiagnosticsTest {
                         "structured_english", "json_prefill" -> QwenDiagnosticPrompts.englishSystem(declarations, caseStarted)
                         "native_complete", "hermes_text" -> QwenDiagnosticPrompts.nativeSystem(caseStarted)
                         "native_envelope" -> QwenDiagnosticPrompts.envelopeSystem(declarations, caseStarted)
+                        "semantic_choice" -> QwenDiagnosticPrompts.selectionSystem(declarations)
                         else -> if (native) request.systemInstruction else
                         "Classify the user request. Reply with exactly one catalogue code and nothing else. " +
                             "Use route_planned_work for writing/analysis or different operations, not for a quantity of one operation. " +
                             "Use route_clarification for missing required values, route_unsupported for questions, facts, negations or unsupported commands."
                     }
-                    val prompt = if (evaluatedArguments || native) case.input else buildString {
+                    val prompt = if (evaluatedArguments || native || variant == "semantic_choice") case.input else buildString {
                         appendLine("Catalogue:")
                         request.functions.forEach { appendLine("${it.name}: ${it.description}") }
                         appendLine("User request:"); append(case.input)
@@ -313,6 +314,14 @@ class LiveActionModelDiagnosticsTest {
                             val tools = if (actual == "FAST_TOOL") listOf(code) else emptyList()
                             event.put("actualRoute", actual).put("actualTools", JSONArray(tools))
                                 .put("semanticStatus", if (actual == case.route && (actual != "FAST_TOOL" || tools == case.tools)) "PASS" else "FAIL")
+                            if (variant == "semantic_choice") {
+                                val semanticMatch = actual == case.route && (actual != "FAST_TOOL" || tools == case.tools)
+                                val action = declarations.firstOrNull { it.codeName == code }
+                                val emptyArguments = actual == "FAST_TOOL" && action?.parameters == null
+                                event.put("evaluationStage", "SELECTION_ONLY").put("structuredValidity", "PASS")
+                                    .put("argumentAccuracy", if (emptyArguments) "PASS" else "NOT_EVALUATED")
+                                    .put("status", if (!semanticMatch) "FAIL" else if (actual != "FAST_TOOL" || emptyArguments) "PASS" else "SELECTION_PASS")
+                            }
                             }
                         } catch (cancelled: CancellationException) {
                             runCatching { conversation.cancelProcess() }
@@ -334,7 +343,10 @@ class LiveActionModelDiagnosticsTest {
                                 if (!event.has("structuredValidity")) event.put("structuredValidity", "FAIL")
                                 else event.put("argumentSchemaStatus", "FAIL")
                                 event.put("status", "FAIL")
-                            } else event.put("semanticStatus", "FAIL")
+                            } else {
+                                event.put("semanticStatus", "FAIL")
+                                if (variant == "semantic_choice") event.put("status", "FAIL").put("structuredValidity", "FAIL")
+                            }
                             event.put("error", error.toString())
                         } finally {
                             writer.append(event.put("wallLatencyMs", SystemClock.elapsedRealtime() - started).put("processPssKb", Debug.getPss()))
