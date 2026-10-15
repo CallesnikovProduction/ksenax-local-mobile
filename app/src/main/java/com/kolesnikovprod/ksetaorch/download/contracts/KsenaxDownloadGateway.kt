@@ -72,6 +72,26 @@ interface KsenaxDownloadGateway {
      */
     fun enqueue(): Long
 
+    /** Восстановление собственной системной задачи после сбоя между enqueue и save. @since 0.4 */
+    fun findExistingDownload(): Long? = null
+
+    /** Изолированный кандидат конкретной системной задачи; не runtime-путь. @since 0.4 */
+    fun getDownloadFile(downloadId: Long): File = getModelFile()
+
+    /** Удаляет только staging этой задачи, сохраняя установленную модель. @since 0.4 */
+    fun deleteDownloadArtifacts(downloadId: Long): Boolean = true
+
+    /**
+     * Проверяет и публикует готовый single-file кандидат. Commit вызывает
+     * переданную операцию только при сохранённом владении задачей.
+     * @since 0.4
+     */
+    fun installDownloadedFile(
+        downloadId: Long,
+        checkActive: () -> Unit,
+        commit: (() -> Boolean) -> Boolean,
+    ): Boolean = hasModelCandidate()
+
     /**
      * Формирует относительный путь к файлу модели внутри app-specific storage.
      *
@@ -254,6 +274,12 @@ interface KsenaxDownloadGateway {
      * @since 0.2
      */
     fun hasValidModel(): Boolean
+
+    /** Проверка большого файла с кооперативной отменой между блоками. @since 0.4 */
+    fun hasValidModel(checkActive: () -> Unit): Boolean {
+        checkActive()
+        return hasValidModel()
+    }
 
     companion object {
         /**

@@ -3,6 +3,11 @@ package com.kolesnikovprod.ksetaorch.download.domain
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
 import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallFailure
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.IOException
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.ConcurrentHashMap
 
@@ -28,7 +33,8 @@ internal class InstallCandidateFinalizer(
         expectedDownloadId: Long? = null,
         onEvent: (InstallFinalizationEvent) -> Unit = {},
     ): InstallFinalizationOutcome {
-        return InstallFinalizationGate.withTargetLock(
+        return try {
+            InstallFinalizationGate.withTargetLock(
             installTarget = installUseCase.installTarget,
         ) {
             resolveSupersededOutcome(expectedDownloadId)?.let { outcome ->
@@ -36,7 +42,11 @@ internal class InstallCandidateFinalizer(
             }
 
             onEvent(InstallFinalizationEvent.PreparationStarted)
-            val isPrepared = installUseCase.prepareInstallCandidate()
+            val isPrepared = if (expectedDownloadId == null) {
+                installUseCase.prepareInstallCandidate()
+            } else {
+                installUseCase.prepareInstallCandidate(expectedDownloadId)
+            }
             onEvent(
                 InstallFinalizationEvent.PreparationFinished(
                     isSuccessful = isPrepared,
@@ -68,14 +78,30 @@ internal class InstallCandidateFinalizer(
             } else {
                 clearInvalidCandidate(expectedDownloadId)
             }
+            }
+        } catch (_: InstallSupersededException) {
+            InstallFinalizationOutcome.SUPERSEDED
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: IOException) {
+            failIfOwned(expectedDownloadId, KsenaxInstallFailure.STORAGE)
+        } catch (_: SecurityException) {
+            failIfOwned(expectedDownloadId, KsenaxInstallFailure.STORAGE)
         }
     }
+
+    private suspend fun failIfOwned(id: Long?, reason: KsenaxInstallFailure): InstallFinalizationOutcome =
+        withContext(Dispatchers.IO) {
+            if (installUseCase.failDownloadIfOwnedBy(id ?: NO_DOWNLOAD_ID, reason)) {
+                InstallFinalizationOutcome.INVALID
+            } else InstallFinalizationOutcome.SUPERSEDED
+        }
 
     private suspend fun completeValidInstallation(
         expectedDownloadId: Long?,
     ): InstallFinalizationOutcome {
         val ownerId = expectedDownloadId ?: NO_DOWNLOAD_ID
-        if (installUseCase.clearSavedDownloadIdIfOwnedBy(ownerId)) {
+        if (withContext(Dispatchers.IO) { installUseCase.clearSavedDownloadIdIfOwnedBy(ownerId) }) {
             return InstallFinalizationOutcome.INSTALLED
         }
 
@@ -87,7 +113,7 @@ internal class InstallCandidateFinalizer(
         expectedDownloadId: Long?,
     ): InstallFinalizationOutcome {
         val ownerId = expectedDownloadId ?: NO_DOWNLOAD_ID
-        if (installUseCase.clearArtifactsIfOwnedBy(ownerId)) {
+        if (withContext(Dispatchers.IO) { installUseCase.clearArtifactsIfOwnedBy(ownerId) }) {
             return InstallFinalizationOutcome.INVALID
         }
 
@@ -107,7 +133,10 @@ internal class InstallCandidateFinalizer(
             return null
         }
 
-        return if (installUseCase.hasValidInstallation()) {
+        if (installUseCase.getSavedDownloadId() != NO_DOWNLOAD_ID) {
+            return InstallFinalizationOutcome.SUPERSEDED
+        }
+        return if (installUseCase.persistedSnapshot()?.isCancelled != true && installUseCase.hasValidInstallation()) {
             InstallFinalizationOutcome.INSTALLED
         } else {
             InstallFinalizationOutcome.SUPERSEDED

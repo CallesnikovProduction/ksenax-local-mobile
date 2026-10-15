@@ -4,6 +4,8 @@ import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnaps
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadPolicy
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
 import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallSnapshot
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallFailure
 
 /**
  * Верхний контракт установки одного локального модельного артефакта.
@@ -16,8 +18,8 @@ import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
  * контракт и одну общую финализацию; реализация не должна предполагать, что
  * вызывающий ViewModel всё время остаётся жив.
  *
- * Для готовых `.litertlm` моделей Gemma и FunctionGemma подготовка подтверждает
- * наличие файла. Для zip-модели Vosk она распаковывает архив и приводит
+ * Для готовых `.litertlm` моделей подготовка проверяет staging-кандидат и
+ * атомарно публикует его. Для zip-модели Vosk она распаковывает архив и приводит
  * файловую систему к runtime-виду.
  *
  * @since 0.2
@@ -63,6 +65,22 @@ interface KsenaxModelInstallUseCase {
      * @since 0.2
      */
     fun getSavedDownloadId(): Long
+
+    /** Восстанавливает сохранённый terminal outcome, если активной задачи нет. @since 0.4 */
+    fun persistedSnapshot(): KsenaxInstallSnapshot? = null
+
+    /** Сверяет потерянную app-запись с системной очередью и ставит фоновую проверку. @since 0.4 */
+    fun reconcileDownload(): Long = getSavedDownloadId()
+
+    /** Ставит долговечное восстановление в очередь без provider IO на вызывающем потоке. @since 0.4 */
+    fun scheduleReconciliation() {}
+
+    /** Записывает отказ и освобождает только принадлежащий задаче staging. @since 0.4 */
+    fun failDownloadIfOwnedBy(downloadId: Long, failure: KsenaxInstallFailure): Boolean =
+        clearArtifactsIfOwnedBy(downloadId)
+
+    /** Подготовка с явным владельцем; устаревшая задача не может опубликовать модель. @since 0.4 */
+    suspend fun prepareInstallCandidate(downloadId: Long): Boolean = prepareInstallCandidate()
 
     /**
      * Если есть реальный `downloadId` — отменяет загрузку;

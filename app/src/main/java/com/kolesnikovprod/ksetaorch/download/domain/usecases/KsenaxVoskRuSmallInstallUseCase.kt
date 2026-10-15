@@ -3,351 +3,153 @@ package com.kolesnikovprod.ksetaorch.download.domain.usecases
 import android.content.Context
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxDownloadGateway
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
-import com.kolesnikovprod.ksetaorch.download.domain.DownloadIdPreferencesStore
-import com.kolesnikovprod.ksetaorch.download.domain.FileIntegrityVerifier
-import com.kolesnikovprod.ksetaorch.download.domain.FileTreeDeleter
-import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
-import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
-import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadPolicy
-import com.kolesnikovprod.ksetaorch.download.domain.data.NO_DOWNLOAD_ID
+import com.kolesnikovprod.ksetaorch.download.domain.*
+import com.kolesnikovprod.ksetaorch.download.domain.data.*
+import com.kolesnikovprod.ksetaorch.download.platform.BackgroundModelInstallScheduler
 import com.kolesnikovprod.ksetaorch.download.platform.VoskRuSmallDownloadGateway
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.zip.ZipInputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 
 /**
- * Use case установки русской Vosk SMALL-модели для offline STT.
- *
- * В отличие от Gemma `.litertlm`, Vosk приходит zip-архивом и должен быть
- * распакован в директорию модели. Финальный runtime-путь этой реализации:
- *
- * ```text
- * models/vosk
- * ```
- *
- * @since 0.2
- * @author Stephan Kolesnikov
- * @see com.kolesnikovprod.ksetaorch.download.contracts.KsenaxModelInstallUseCase
- * @see com.kolesnikovprod.ksetaorch.download.platform.VoskRuSmallDownloadGateway
+ * Устанавливает Vosk Small RU из закреплённого ZIP в models/vosk.
+ * Кандидаты изолированы по задаче; прежняя модель сохраняется при отказе/отмене.
+ * @since 0.4
  */
 class KsenaxVoskRuSmallInstallUseCase(
     context: Context,
-    private val downloadGateway: KsenaxDownloadGateway =
-        VoskRuSmallDownloadGateway(context.applicationContext),
+    private val downloadGateway: KsenaxDownloadGateway = VoskRuSmallDownloadGateway(context.applicationContext),
 ) : KsenaxModelInstallUseCase {
+    private val appContext = context.applicationContext
+    override val installTarget = KsenaxInstallTarget.VOSK_RU_SMALL
+    private val store = DownloadIdPreferencesStore(context, installTarget)
 
-    override val installTarget: KsenaxInstallTarget = KsenaxInstallTarget.VOSK_RU_SMALL
-    private val downloadIdPreferencesStore = DownloadIdPreferencesStore(
-        context       = context,
-        installTarget = installTarget,
-    )
-
-    /**
-     * Перед новой загрузкой удаляет старую Vosk-директорию, zip и временную
-     * папку распаковки, чтобы новый install-кандидат не смешался со старым.
-     *
-     * @since 0.2
-     */
-    override fun startDownloadAndSave(
-        policy: KsenaxDownloadPolicy,
-    ): Long {
-        return downloadIdPreferencesStore.getOrCreate {
-            deleteLocalArtifacts()
-
+    override fun startDownloadAndSave(policy: KsenaxDownloadPolicy): Long {
+        val id = store.getOrCreate(createDownload = {
             downloadGateway.allowOverMeteredNetwork = policy.allowOverMeteredNetwork
-            downloadGateway.allowOverRoaming        = policy.allowOverRoaming
-
+            downloadGateway.allowOverRoaming = policy.allowOverRoaming
             downloadGateway.enqueue()
-        }
+        }, recoverDownload = downloadGateway::findExistingDownload)
+        BackgroundModelInstallScheduler(appContext).enqueueFinalizationFor(id)
+        return id
     }
 
-    override fun getSavedDownloadId(): Long {
-        return downloadIdPreferencesStore.get()
+    override fun getSavedDownloadId(): Long = store.get()
+    override fun persistedSnapshot(): KsenaxInstallSnapshot? = store.terminalSnapshot()
+
+    override fun scheduleReconciliation() {
+        BackgroundModelInstallScheduler(appContext).enqueueRecoveryFor(installTarget)
+    }
+
+    override fun reconcileDownload(): Long {
+        val id = store.recoverIfMissing(downloadGateway::findExistingDownload)
+        if (id == NO_DOWNLOAD_ID) return id
+        BackgroundModelInstallScheduler(appContext).enqueueFinalizationFor(id)
+        return id
     }
 
     override fun cancelDownload(downloadId: Long) {
         if (downloadId == NO_DOWNLOAD_ID) return
-
-        downloadGateway.cancelBy(downloadId)
-        clearArtifactsIfOwnedBy(downloadId)
-    }
-
-    override fun clearArtifacts() {
-        downloadIdPreferencesStore.clearWithCleanup {
-            deleteLocalArtifacts()
+        store.finishIfMatches(downloadId, InstallSnapshots.cancelled()) {
+            cleanup(downloadId)
+            downloadGateway.cancelBy(downloadId)
         }
     }
 
-    override fun clearArtifactsIfOwnedBy(downloadId: Long): Boolean {
-        return downloadIdPreferencesStore.clearWithCleanupIfMatches(downloadId) {
-            deleteLocalArtifacts()
+    override fun clearArtifacts() { clearArtifactsIfOwnedBy(store.get()) }
+    override fun clearSavedDownloadId() { store.clear() }
+    override fun clearArtifactsIfOwnedBy(downloadId: Long): Boolean =
+        failDownloadIfOwnedBy(downloadId, KsenaxInstallFailure.INTEGRITY)
+
+    override fun failDownloadIfOwnedBy(downloadId: Long, failure: KsenaxInstallFailure): Boolean =
+        store.finishIfMatches(downloadId, InstallSnapshots.failed(failure)) { cleanup(downloadId) }
+
+    override fun clearSavedDownloadIdIfOwnedBy(downloadId: Long): Boolean =
+        store.finishIfMatches(downloadId, InstallSnapshots.installed()) { cleanup(downloadId) }
+
+    override fun deleteLocalArtifacts(): Boolean =
+        FileTreeDeleter.deleteIfExists(downloadGateway.getModelDirectory())
+
+    override suspend fun hasInstallCandidate(): Boolean = withContext(Dispatchers.IO) {
+        downloadGateway.hasModelCandidate() ||
+            VoskRuSmallDownloadGateway.isValidVoskModelDirectory(backupDirectory())
+    }
+
+    override suspend fun prepareInstallCandidate(): Boolean = prepareInstallCandidate(store.get())
+
+    override suspend fun prepareInstallCandidate(downloadId: Long): Boolean = withContext(Dispatchers.IO) {
+        val jobContext = currentCoroutineContext()
+        val checkActive = {
+            jobContext.ensureActive()
+            if (store.get() != downloadId) throw InstallSupersededException()
         }
-    }
-
-    override fun clearSavedDownloadId() {
-        downloadIdPreferencesStore.clear()
-    }
-
-    override fun clearSavedDownloadIdIfOwnedBy(downloadId: Long): Boolean {
-        return downloadIdPreferencesStore.clearIfMatches(downloadId)
-    }
-
-    override fun deleteLocalArtifacts(): Boolean {
-        val isArchiveDeleted = downloadGateway.deleteModelFile()
-        val isInstallDirectoryDeleted = deleteIfExists(downloadGateway.getModelDirectory())
-        val isTempDirectoryDeleted = deleteIfExists(getTempInstallDirectory())
-
-        return isArchiveDeleted && isInstallDirectoryDeleted && isTempDirectoryDeleted
-    }
-
-    override suspend fun hasInstallCandidate(): Boolean {
-        return withContext(Dispatchers.IO) {
-            downloadGateway.hasModelCandidate() ||
-                    VoskRuSmallDownloadGateway.isValidVoskModelDirectory(
-                        getTempArchiveRootDirectory()
-                    )
-        }
-    }
-
-    /**
-     * Распаковывает скачанный zip в temp-директорию, проверяет базовую Vosk-
-     * структуру и переносит содержимое во финальный `models/vosk`.
-     *
-     * Если `models/vosk` уже валидна, метод ничего не делает.
-     *
-     * @since 0.2
-     */
-    override suspend fun prepareInstallCandidate(): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                when {
-                    downloadGateway.hasValidModel() -> true
-                    VoskRuSmallDownloadGateway.isValidVoskModelDirectory(
-                        getTempArchiveRootDirectory()
-                    ) ->
-                        movePreparedTempModelToFinalDirectory()
-
-                    hasValidDownloadedArchive() ->
-                        unzipArchiveToFinalDirectory()
-
-                    else -> false
-                }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (_: Exception) {
-                false
-            }
-        }
-    }
-
-    override suspend fun hasValidInstallation(): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                downloadGateway.hasValidModel()
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (_: Exception) {
-                false
-            }
-        }
-    }
-
-    override fun queryDownloadSnapshot(downloadId: Long): KsenaxDownloadTaskSnapshot? {
-        return downloadGateway.querySnapshotBy(downloadId)
-    }
-
-    override fun getInstalledPath(): String {
-        return downloadGateway.getModelDirectory().absolutePath
-    }
-
-    private fun hasValidDownloadedArchive(): Boolean {
-        return FileIntegrityVerifier.matches(
-            file = downloadGateway.getModelFile(),
-            expectedSizeBytes = VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_SIZE_BYTES,
-            expectedSha256 = VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_SHA256,
-        )
-    }
-
-    /**
-     * Возвращает путь к директории, куда Vosk-ветка может сохранять WAV-файлы
-     * голосовых команд.
-     *
-     * @since 0.2
-     */
-    fun getVoskSavedVoicesDirPath(): String {
-        return downloadGateway.getSavedVoicesDirectory().absolutePath
-    }
-
-
-    /*
-     * ╔════════════════════════════════════╗
-     * ║  VOSK ZIP INSTALL CONTOUR          ║
-     * ╚════════════════════════════════════╝
-     *
-     * Vosk приходит zip-архивом, поэтому install-кандидат нужно распаковать,
-     * проверить и только потом перенести в финальную директорию `models/vosk`.
-     *
-     * Распаковка всегда идёт во временную `.vosk-installing`, а не напрямую
-     * в runtime-путь. Это не даёт неполной модели стать видимой для STT runtime.
-     *
-     * [unzipArchiveSafely] защищает от Zip Slip через canonical path check.
-     */
-
-    /**
-     * Главный метод подготовки архива.
-     *
-     * Сценарий его работы:
-     * 1. взять zip-файл;
-     * 2. взять temp-директорию;
-     * 3. проверить, что zip реально существует;
-     * 4. удалить старый temp;
-     * 5. создать новый temp;
-     * 6. безопасно распаковать zip в temp;
-     * 7. проверить структуру Vosk внутри temp;
-     * 8. перенести подготовленную модель в финальную директорию.
-     */
-    private fun unzipArchiveToFinalDirectory(): Boolean {
-        val archivedZipFile = downloadGateway.getModelFile() // 1
-        val tempDirectory  = getTempInstallDirectory()      // 2
-
-        if (!archivedZipFile.isFile || archivedZipFile.length() <= 0L) { // 3
-            return false
-        }
-
-        deleteIfExists(tempDirectory) // 4
-
-        if (!tempDirectory.mkdirs()) { // 5
-            return false
-        }
-
-        val isUnpacked = unzipArchiveSafely( // 6
-            archiveFile     = archivedZipFile,
-            outputDirectory = tempDirectory,
-        )
-
-        if (!isUnpacked || !VoskRuSmallDownloadGateway.isValidVoskModelDirectory( // 7
-                getTempArchiveRootDirectory()
-            )
-        ) {
-            deleteIfExists(tempDirectory)
-            return false
-        }
-
-        return movePreparedTempModelToFinalDirectory() // 8
-    }
-
-    private fun getTempInstallDirectory(): File {
+        checkActive()
         val finalDirectory = downloadGateway.getModelDirectory()
-        val parentDirectory = finalDirectory.parentFile
-
-        return File(
-            parentDirectory,
-            TEMP_INSTALL_DIRECTORY_NAME,
-        )
-    }
-
-    private fun deleteIfExists(file: File): Boolean {
-        return FileTreeDeleter.deleteIfExists(file)
-    }
-
-    /**
-     * Важный security-метод локального unzip-контура, защищающий от zip slip.
-     *
-     * *Zip Slip — ситуация плохого архива, содержащий `entry` с именем, например:*
-     * ```
-     * ../../../../some-dangerous-file
-     * ```
-     * *Если попробовать записать этот файл по обычному [File] API, то файл
-     * может оказаться за пределами `outputDirectory`*.
-     */
-    private fun unzipArchiveSafely(
-        archiveFile: File,
-        outputDirectory: File,
-    ): Boolean {
-        val canonicalOutputDirectory = outputDirectory.canonicalFile
-        val canonicalOutputPrefix = canonicalOutputDirectory.path + File.separator
-
-        ZipInputStream(archiveFile.inputStream().buffered()).use { zipInputStream ->
-            while (true) {
-                // один файл/директория внутри zip
-                val entry = zipInputStream.nextEntry ?: break
-                val outputFile = File(outputDirectory, entry.name)
-                val canonicalOutputFile = outputFile.canonicalFile
-
-                // Файл должен быть внутри temporary
-                val isInsideOutputDirectory =
-                    // out-file = out-directory
-                    canonicalOutputFile == canonicalOutputDirectory ||
-                            // out-file внутри out-directory
-                            canonicalOutputFile.path.startsWith(canonicalOutputPrefix)
-
-                if (!isInsideOutputDirectory) {
-                    return false
-                }
-
-                if (entry.isDirectory) {
-                    if (outputFile.parentFile?.exists() == false &&
-                        outputFile.parentFile?.mkdirs() == false) {
-                        return false
-                    }
-                } else {
-                    outputFile.parentFile?.mkdirs()
-                    outputFile.outputStream().use { outputStream ->
-                        zipInputStream.copyTo(outputStream)
-                    }
-                }
-
-                zipInputStream.closeEntry()
+        val backup = backupDirectory()
+        if (!finalDirectory.exists() && VoskRuSmallDownloadGateway.isValidVoskModelDirectory(backup)) {
+            store.runIfMatches(downloadId) {
+                Files.move(backup.toPath(), finalDirectory.toPath(), ATOMIC_MOVE)
+                true
             }
         }
+        if (downloadId == NO_DOWNLOAD_ID && downloadGateway.hasValidModel()) return@withContext true
+        val archive = if (downloadId == NO_DOWNLOAD_ID) downloadGateway.getModelFile()
+            else downloadGateway.getDownloadFile(downloadId)
+        if (!FileIntegrityVerifier.matches(
+                archive,
+                VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_SIZE_BYTES,
+                VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_SHA256,
+                checkActive,
+            )) return@withContext false
 
-        return true
+        val temp = temporaryDirectory(downloadId)
+        check(FileTreeDeleter.deleteIfExists(temp)) { "Cannot clear extraction staging" }
+        if (!SafeZipExtractor.extract(archive, temp, checkActive)) return@withContext false
+        val root = File(temp, VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_ROOT_DIRECTORY_NAME)
+        if (!VoskRuSmallDownloadGateway.isValidVoskModelDirectory(root)) return@withContext false
+        checkActive()
+        store.runIfMatches(downloadId) {
+            // Do not replace the same pinned, usable model or its saved voices.
+            if (downloadGateway.hasValidModel()) return@runIfMatches true
+            check(FileTreeDeleter.deleteIfExists(backup)) { "Cannot clear install backup" }
+            val hadPrevious = finalDirectory.exists()
+            if (hadPrevious) Files.move(finalDirectory.toPath(), backup.toPath(), ATOMIC_MOVE)
+            try {
+                Files.move(root.toPath(), finalDirectory.toPath(), ATOMIC_MOVE)
+            } catch (exception: Exception) {
+                if (hadPrevious && !finalDirectory.exists()) {
+                    Files.move(backup.toPath(), finalDirectory.toPath(), ATOMIC_MOVE)
+                }
+                throw exception
+            }
+            FileTreeDeleter.deleteIfExists(backup)
+            true
+        }
     }
 
-    private fun movePreparedTempModelToFinalDirectory(): Boolean {
-        val preparedRoot    = getTempArchiveRootDirectory()
-        val finalDirectory  = downloadGateway.getModelDirectory()
-        val parentDirectory = finalDirectory.parentFile ?: return false
-
-        if (!VoskRuSmallDownloadGateway.isValidVoskModelDirectory(preparedRoot)) {
-            return false
-        }
-
-        if (!deleteIfExists(finalDirectory)) {
-            return false
-        }
-
-        if (!parentDirectory.exists() && !parentDirectory.mkdirs()) {
-            return false
-        }
-
-        val isMoved = preparedRoot.renameTo(finalDirectory) ||
-            preparedRoot.copyRecursively(
-                target    = finalDirectory,
-                overwrite = true,
-            )
-
-        if (!isMoved) {
-            return false
-        }
-
-        deleteIfExists(getTempInstallDirectory())
-
-        return VoskRuSmallDownloadGateway.isValidVoskModelDirectory(finalDirectory)
+    override suspend fun hasValidInstallation(): Boolean = withContext(Dispatchers.IO) {
+        downloadGateway.hasValidModel()
     }
 
-    private fun getTempArchiveRootDirectory(): File {
-        return File(
-            getTempInstallDirectory(),
-            VoskRuSmallDownloadGateway.VOSK_RU_SMALL_ARCHIVE_ROOT_DIRECTORY_NAME,
-        )
-    }
+    override fun queryDownloadSnapshot(downloadId: Long): KsenaxDownloadTaskSnapshot? =
+        downloadGateway.querySnapshotBy(downloadId)
 
+    override fun getInstalledPath(): String = downloadGateway.getModelDirectory().absolutePath
 
+    /** Путь WAV-команд, сохраняемый между неудачными попытками установки. @since 0.4 */
+    fun getVoskSavedVoicesDirPath(): String = downloadGateway.getSavedVoicesDirectory().absolutePath
 
-    private companion object {
-        const val TEMP_INSTALL_DIRECTORY_NAME = ".vosk-installing"
+    private fun temporaryDirectory(id: Long): File =
+        File(downloadGateway.getModelDirectory().parentFile, ".vosk-installing-$id")
+
+    private fun backupDirectory(): File = File(downloadGateway.getModelDirectory().parentFile, ".vosk-backup")
+
+    private fun cleanup(id: Long) {
+        if (id != NO_DOWNLOAD_ID) downloadGateway.deleteDownloadArtifacts(id)
+        FileTreeDeleter.deleteIfExists(temporaryDirectory(id))
     }
 }

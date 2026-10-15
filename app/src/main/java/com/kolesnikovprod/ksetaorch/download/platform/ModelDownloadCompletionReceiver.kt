@@ -4,6 +4,10 @@ import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Получает системное событие завершения DownloadManager-задачи.
@@ -24,13 +28,21 @@ internal class ModelDownloadCompletionReceiver : BroadcastReceiver() {
             INVALID_DOWNLOAD_ID,
         )
 
-        if (downloadId == INVALID_DOWNLOAD_ID) return
+        if (downloadId <= 0L) return
 
-        BackgroundModelInstallScheduler(context)
-            .enqueueFinalizationFor(downloadId)
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                BackgroundModelInstallScheduler(context.applicationContext)
+                    .enqueueFinalizationFor(downloadId, awaitPersistence = true)
+            } catch (_: Exception) {
+                // The persisted submission watchdog remains the recovery owner.
+                Log.w("ModelInstall", "Completion scheduling deferred to persisted watchdog")
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 
-    private companion object {
-        const val INVALID_DOWNLOAD_ID = -1L
-    }
+    private companion object { const val INVALID_DOWNLOAD_ID = -1L }
 }

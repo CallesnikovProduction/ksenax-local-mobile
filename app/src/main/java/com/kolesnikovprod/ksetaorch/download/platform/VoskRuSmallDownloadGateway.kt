@@ -7,6 +7,9 @@ import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadState
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTransferMetrics
 import java.io.File
 import java.util.zip.ZipFile
+import java.util.UUID
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 
 /**
  * Android-реализация [KsenaxDownloadGateway] для русской Vosk SMALL-модели.
@@ -38,16 +41,30 @@ internal class VoskRuSmallDownloadGateway(
      * @since 0.2
      */
     override fun enqueue(): Long {
-        deleteModelFile()
-
         return backend.enqueueNew(
             url                     = VOSK_RU_SMALL_URL,
-            fileName                = VOSK_RU_SMALL_ARCHIVE_FILE_NAME,
+            fileName                = "$VOSK_RU_SMALL_ARCHIVE_FILE_NAME.${UUID.randomUUID()}.partial",
             modelNameAsDirectory    = VOSK_RU_SMALL_MODEL_NAME_IN_DIRECTORY,
             allowOverMeteredNetwork = allowOverMeteredNetwork,
             allowOverRoaming        = allowOverRoaming,
+            expectedSizeBytes = VOSK_RU_SMALL_ARCHIVE_SIZE_BYTES,
+            extraRequiredBytes = 256L * 1024L * 1024L,
+            displayName = "Vosk Russian Small",
+            staging = true,
         )
     }
+
+    override fun findExistingDownload(): Long? = backend.findExistingDownload(
+        VOSK_RU_SMALL_URL, VOSK_RU_SMALL_MODEL_NAME_IN_DIRECTORY, VOSK_RU_SMALL_ARCHIVE_FILE_NAME,
+    )
+
+    override fun getDownloadFile(downloadId: Long): File = backend.downloadFile(
+        downloadId, VOSK_RU_SMALL_URL, VOSK_RU_SMALL_MODEL_NAME_IN_DIRECTORY, VOSK_RU_SMALL_ARCHIVE_FILE_NAME,
+    )
+
+    override fun deleteDownloadArtifacts(downloadId: Long): Boolean = backend.deleteDownloadArtifacts(
+        downloadId, VOSK_RU_SMALL_URL, VOSK_RU_SMALL_MODEL_NAME_IN_DIRECTORY, VOSK_RU_SMALL_ARCHIVE_FILE_NAME,
+    )
 
     override fun modelFilePath(): String {
         return backend.modelFilePath(
@@ -101,11 +118,13 @@ internal class VoskRuSmallDownloadGateway(
     }
 
     override fun querySnapshotBy(downloadId: Long): KsenaxDownloadTaskSnapshot? {
-        val systemSnapshot = backend.querySnapshotBy(downloadId)
-        val hasCompleteArchive = isCompleteVoskArchive(getModelFile())
+        val systemSnapshot = backend.querySnapshotBy(downloadId, VOSK_RU_SMALL_URL)
+        if (systemSnapshot?.state == KsenaxDownloadState.FAILED) return systemSnapshot
+        val archive = runCatching { getDownloadFile(downloadId) }.getOrNull()
+        val hasCompleteArchive = archive != null && isCompleteVoskArchive(archive)
 
         if (hasCompleteArchive) {
-            val archiveSizeBytes = getModelFile().length()
+            val archiveSizeBytes = archive!!.length()
             val completedTransferMetrics =
                 systemSnapshot?.transferMetrics?.copy(
                     downloadedBytes = archiveSizeBytes,
@@ -123,6 +142,8 @@ internal class VoskRuSmallDownloadGateway(
             )).copy(
                 progress = 1f,
                 state = KsenaxDownloadState.SUCCESSFUL,
+                reasonCode = null,
+                waitReason = null,
                 transferMetrics = completedTransferMetrics,
             )
         }
@@ -193,10 +214,14 @@ internal class VoskRuSmallDownloadGateway(
          * @since 0.2
          */
         fun isValidVoskModelDirectory(directory: File): Boolean {
-            if (!directory.isDirectory) return false
+            if (!Files.isDirectory(directory.toPath(), NOFOLLOW_LINKS)) return false
+            val root = directory.canonicalFile.toPath()
 
             return VOSK_REQUIRED_MODEL_FILES.all { relativePath ->
-                File(directory, relativePath).isFile
+                File(directory, relativePath).let {
+                    Files.isRegularFile(it.toPath(), NOFOLLOW_LINKS) &&
+                        it.canonicalFile.toPath().startsWith(root) && it.length() > 0L
+                }
             }
         }
 

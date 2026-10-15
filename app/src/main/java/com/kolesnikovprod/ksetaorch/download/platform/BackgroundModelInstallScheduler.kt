@@ -26,7 +26,21 @@ internal class BackgroundModelInstallScheduler(
     private val appContext = context.applicationContext
     private val workManager = WorkManager.getInstance(appContext)
 
-    fun enqueueFinalizationFor(downloadId: Long): Boolean {
+    fun enqueueRecoveryFor(target: KsenaxInstallTarget) {
+        val request = OneTimeWorkRequestBuilder<ModelInstallFinalizationWorker>()
+            .setInputData(workDataOf(ModelInstallFinalizationWorker.KEY_INSTALL_TARGET_ID to target.id))
+            .build()
+        workManager.enqueueUniqueWork("model-install-recovery:${target.id}", ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun enqueueFinalizationFor(downloadId: Long, awaitPersistence: Boolean = false): Boolean {
+        return enqueue(downloadId, continuation = false, awaitPersistence = awaitPersistence)
+    }
+
+    fun enqueueNextCheck(downloadId: Long): Boolean = enqueue(downloadId, continuation = true, awaitPersistence = true)
+
+    private fun enqueue(downloadId: Long, continuation: Boolean, awaitPersistence: Boolean = false): Boolean {
+        if (downloadId <= 0L) return false
         val installTarget = findInstallTarget(downloadId) ?: return false
         val workRequest = OneTimeWorkRequestBuilder<ModelInstallFinalizationWorker>()
             .setInputData(
@@ -41,16 +55,18 @@ internal class BackgroundModelInstallScheduler(
                 TimeUnit.SECONDS,
             )
             .addTag(workTagFor(installTarget))
+            .setInitialDelay(if (continuation) 30L else 0L, TimeUnit.SECONDS)
             .build()
 
-        workManager.enqueueUniqueWork(
+        val operation = workManager.enqueueUniqueWork(
             uniqueWorkName(
                 installTarget = installTarget,
                 downloadId = downloadId,
             ),
-            ExistingWorkPolicy.KEEP,
+            if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,
             workRequest,
         )
+        if (awaitPersistence) operation.result.get(8L, TimeUnit.SECONDS)
 
         return true
     }

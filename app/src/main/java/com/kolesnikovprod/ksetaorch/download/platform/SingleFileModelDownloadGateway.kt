@@ -4,7 +4,11 @@ import android.content.Context
 import com.kolesnikovprod.ksetaorch.download.contracts.KsenaxDownloadGateway
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnapshot
 import com.kolesnikovprod.ksetaorch.download.domain.data.ModelArtifactSpec
+import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxInstallTarget
+import com.kolesnikovprod.ksetaorch.download.domain.ArtifactFileInstaller
+import com.kolesnikovprod.ksetaorch.download.domain.FileIntegrityVerifier
 import java.io.File
+import java.util.UUID
 
 /**
  * Базовый gateway для моделей, распространяемых как один готовый runtime-файл.
@@ -24,9 +28,8 @@ import java.io.File
  * Сам gateway связывает модельную спецификацию с backend-операциями и
  * возвращает наружу доменные сущности download-контура.
  *
- * Перед новой загрузкой [enqueue] удаляет старый файл модели и runtime-cache
- * директорию. Это предотвращает запуск устаревшего или несовместимого
- * артефакта во время повторной установки.
+ * Загрузка идёт в отдельный staging. Runtime-файл заменяется атомарно только
+ * после проверки кандидата; предыдущая установка сохраняется при отказе.
  *
  * Проверка валидности модели через [hasValidModel] требует не только наличия
  * файла, но и совпадения размера и SHA-256. Поэтому битая, неполная или
@@ -55,16 +58,52 @@ internal abstract class SingleFileModelDownloadGateway(
     private val backend = AndroidModelDownloadBackend(context.applicationContext)
 
     final override fun enqueue(): Long {
-        deleteRuntimeCacheDirectory()
-        deleteModelFile()
-
         return backend.enqueueNew(
             url                     = artifact.url,
-            fileName                = artifact.localFileName,
+            fileName                = "${artifact.localFileName}.${UUID.randomUUID()}.partial",
             modelNameAsDirectory    = artifact.storageDirectoryName,
             allowOverMeteredNetwork = allowOverMeteredNetwork,
             allowOverRoaming        = allowOverRoaming,
+            expectedSizeBytes = artifact.expectedSizeBytes,
+            displayName = KsenaxInstallTarget.entries.firstOrNull {
+                it.storageDirectoryName == artifact.storageDirectoryName
+            }?.displayName ?: artifact.storageDirectoryName,
+            staging = true,
         )
+    }
+
+    final override fun findExistingDownload(): Long? = backend.findExistingDownload(
+        artifact.url, artifact.storageDirectoryName, artifact.localFileName,
+    )
+
+    final override fun getDownloadFile(downloadId: Long): File = backend.downloadFile(
+        downloadId, artifact.url, artifact.storageDirectoryName, artifact.localFileName,
+    )
+
+    final override fun deleteDownloadArtifacts(downloadId: Long): Boolean = backend.deleteDownloadArtifacts(
+        downloadId, artifact.url, artifact.storageDirectoryName, artifact.localFileName,
+    )
+
+    final override fun installDownloadedFile(
+        downloadId: Long,
+        checkActive: () -> Unit,
+        commit: (() -> Boolean) -> Boolean,
+    ): Boolean {
+        val candidate = getDownloadFile(downloadId)
+        if (!candidate.exists() && hasValidModel(checkActive)) return true
+        if (!FileIntegrityVerifier.matches(candidate, artifact.expectedSizeBytes, artifact.expectedSha256, checkActive)) {
+            return false
+        }
+        checkActive()
+        return commit {
+            val installed = getModelFile()
+            val parent = installed.parentFile ?: return@commit false
+            if (!parent.isDirectory && !parent.mkdirs()) {
+                throw java.io.IOException("Cannot create model installation directory")
+            }
+            if (candidate == installed) true // Compatibility with an existing legacy task.
+            else ArtifactFileInstaller.promote(candidate, installed)
+        }
     }
 
     final override fun modelFilePath(): String {
@@ -115,7 +154,7 @@ internal abstract class SingleFileModelDownloadGateway(
     }
 
     final override fun querySnapshotBy(downloadId: Long): KsenaxDownloadTaskSnapshot? {
-        return backend.querySnapshotBy(downloadId)
+        return backend.querySnapshotBy(downloadId, artifact.url)
     }
 
     final override fun hasModelCandidate(): Boolean {
@@ -126,11 +165,16 @@ internal abstract class SingleFileModelDownloadGateway(
     }
 
     final override fun hasValidModel(): Boolean {
+        return hasValidModel {}
+    }
+
+    final override fun hasValidModel(checkActive: () -> Unit): Boolean {
         return backend.hasValidModelFile(
             modelNameAsDirectory = artifact.storageDirectoryName,
             fileName             = artifact.localFileName,
             expectedSizeBytes    = artifact.expectedSizeBytes,
             expectedSha256       = artifact.expectedSha256,
+            checkActive = checkActive,
         )
     }
 }

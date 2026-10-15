@@ -10,6 +10,9 @@ import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadTaskSnaps
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadState
 import com.kolesnikovprod.ksetaorch.download.domain.data.KsenaxDownloadWaitReason
 import java.io.File
+import java.io.IOException
+import java.net.URI
+import java.nio.file.Files
 
 /**
  * Низкоуровневый Android-backend для загрузки и хранения модельных файлов.
@@ -97,12 +100,35 @@ internal class AndroidModelDownloadBackend(
         modelNameAsDirectory:    String,
         allowOverMeteredNetwork: Boolean,
         allowOverRoaming:        Boolean,
+        expectedSizeBytes: Long = 0L,
+        displayName: String = fileName,
+        staging: Boolean = false,
+        extraRequiredBytes: Long = 0L,
     ): Long {
-        require(url.startsWith("https://")) { "Model-URL must be HTTPS" }
+        require(URI(url).let { it.scheme == "https" && !it.host.isNullOrBlank() && it.userInfo == null }) {
+            "Model-URL must be HTTPS without credentials"
+        }
+        val directory = if (staging) {
+            stagingDirectory(modelNameAsDirectory)
+        } else {
+            getModelDirectory(modelNameAsDirectory)
+        }
+        if ((!directory.isDirectory && !directory.mkdirs()) || !directory.canWrite()) {
+            throw IOException("Model destination is not writable")
+        }
+        if (expectedSizeBytes > 0L && directory.usableSpace < expectedSizeBytes + extraRequiredBytes) {
+            throw InsufficientModelStorageException()
+        }
+        val relativePath = if (staging) {
+            "${modelDirectoryPath("$STAGING_DIRECTORY_NAME-$modelNameAsDirectory")}/" +
+                requireSafePathSegment(fileName, "fileName")
+        } else {
+            modelFilePath(modelNameAsDirectory, fileName)
+        }
 
         val request = DownloadManager.Request(url.toUri())
-            .setTitle(fileName)
-            .setDescription("Downloading $fileName..")
+            .setTitle(displayName)
+            .setDescription("OpenKsenax: downloading model")
             .setNotificationVisibility(
                 DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
             )
@@ -111,14 +137,63 @@ internal class AndroidModelDownloadBackend(
             .setDestinationInExternalFilesDir(
                 appContext,
                 null,
-                modelFilePath(
-                    modelNameAsDirectory = modelNameAsDirectory,
-                    fileName             = fileName,
-                ),
+                relativePath,
             )
 
         return downloadManager.enqueue(request)
     }
+
+    fun downloadFile(downloadId: Long, sourceUrl: String, directoryName: String, legacyName: String): File {
+        downloadManager.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
+            check(cursor != null && cursor.moveToFirst()) { "Download task missing" }
+            check(cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_URI)) == sourceUrl) {
+                "Download source changed"
+            }
+            val uri = URI(cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)))
+            check(uri.scheme == "file") { "Download destination must be a file" }
+            val file = File(uri).canonicalFile
+            val stagingDirectory = stagingDirectory(directoryName)
+            val legacyFile = getModelFile(directoryName, legacyName)
+            check(file.parentFile == stagingDirectory || file == legacyFile) {
+                "Download destination outside model storage"
+            }
+            return file
+        }
+    }
+
+    fun findExistingDownload(sourceUrl: String, directoryName: String, legacyName: String): Long? {
+        downloadManager.query(DownloadManager.Query()).use { cursor ->
+            if (cursor == null) throw IOException("Download provider unavailable")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_URI)) != sourceUrl) continue
+                val state = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                if (state == DownloadManager.STATUS_FAILED) continue
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_ID))
+                val candidate = runCatching { downloadFile(id, sourceUrl, directoryName, legacyName) }.getOrNull()
+                    ?: continue
+                // Legacy runtime rows are not resumable staging after a successful install.
+                if (candidate.parentFile != stagingDirectory(directoryName)) {
+                    if (state != DownloadManager.STATUS_SUCCESSFUL) return id
+                    continue
+                }
+                if (state == DownloadManager.STATUS_SUCCESSFUL && !candidate.isFile) continue
+                return id
+            }
+        }
+        return null
+    }
+
+    fun deleteDownloadArtifacts(downloadId: Long, sourceUrl: String, directoryName: String, legacyName: String): Boolean {
+        val file = runCatching { downloadFile(downloadId, sourceUrl, directoryName, legacyName) }.getOrNull()
+            ?: return true
+        if (file.parentFile != stagingDirectory(directoryName)) return true
+        // remove(id) also removes the destination; only staging rows may be removed here.
+        downloadManager.remove(downloadId)
+        return FileTreeDeleter.deleteIfExists(file)
+    }
+
+    private fun stagingDirectory(directoryName: String): File =
+        getModelDirectory("$STAGING_DIRECTORY_NAME-" + requireSafePathSegment(directoryName, "directoryName"))
 
     /**
      * Возвращает относительный путь к файлу модели внутри app-specific external storage.
@@ -306,6 +381,17 @@ internal class AndroidModelDownloadBackend(
      * @since 0.2
      */
     fun cancelBy(downloadId: Long) {
+        downloadManager.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
+            if (cursor == null) throw IOException("Download provider unavailable")
+            if (cursor.moveToFirst() &&
+                cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) == DownloadManager.STATUS_SUCCESSFUL
+            ) {
+                val uri = cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))
+                val parent = runCatching { File(URI(uri)).parentFile?.name }.getOrNull()
+                // A pre-SPEC-002 completed task may point at an installed runtime file.
+                if (parent?.startsWith("$STAGING_DIRECTORY_NAME-") != true) return
+            }
+        }
         downloadManager.remove(downloadId)
     }
 
@@ -325,25 +411,31 @@ internal class AndroidModelDownloadBackend(
      * - [KsenaxDownloadTaskSnapshot.transferMetrics] — реальные счётчики байтов,
      *   средняя скорость по короткому окну и ETA.
      *
-     * Если задача не найдена, cursor недоступен или в результате нет обязательной
-     * status-колонки, возвращается `null`.
+     * `null` означает, что доступный provider не нашёл строку задачи.
+     * Недоступный cursor/отсутствующая status-колонка вызывают IOException;
+     * такую ошибку нельзя трактовать как разрешение удалить живую загрузку.
      *
      * Для успешной загрузки прогресс принудительно считается равным `1f`.
      * Если общий размер файла неизвестен, прогресс считается `0f`, пока задача
      * не перейдёт в успешное состояние.
      * @since 0.2
      */
-    fun querySnapshotBy(downloadId: Long): KsenaxDownloadTaskSnapshot? {
+    fun querySnapshotBy(downloadId: Long, expectedSourceUrl: String? = null): KsenaxDownloadTaskSnapshot? {
         val query = DownloadManager.Query().setFilterById(downloadId)
-        val cursor = downloadManager.query(query) ?: return null
+        val cursor = downloadManager.query(query) ?: throw IOException("Download provider unavailable")
 
         cursor.use {
             if (!it.moveToFirst()) return null
+            if (expectedSourceUrl != null &&
+                it.getString(it.getColumnIndexOrThrow(DownloadManager.COLUMN_URI)) != expectedSourceUrl
+            ) {
+                return KsenaxDownloadTaskSnapshot(0f, KsenaxDownloadState.FAILED, reasonCode = -2)
+            }
 
             val statusColumnIndex =
                 it.getColumnIndex(DownloadManager.COLUMN_STATUS)
 
-            if (statusColumnIndex < 0) return null
+            if (statusColumnIndex < 0) throw IOException("Download provider status unavailable")
 
             val status = it.getInt(statusColumnIndex)
             val rawDownloadedBytes = it.getLongOrDefault(
@@ -445,6 +537,7 @@ internal class AndroidModelDownloadBackend(
         fileName:             String,
         expectedSizeBytes:    Long,
         expectedSha256:       String,
+        checkActive: () -> Unit = {},
     ): Boolean {
         val modelFile = getModelFile(
             modelNameAsDirectory = modelNameAsDirectory,
@@ -455,6 +548,7 @@ internal class AndroidModelDownloadBackend(
             file = modelFile,
             expectedSizeBytes = expectedSizeBytes,
             expectedSha256 = expectedSha256,
+            checkActive = checkActive,
         )
     }
 
@@ -547,7 +641,9 @@ internal class AndroidModelDownloadBackend(
         childName: String,
     ): File {
         val canonicalParent = parent.canonicalFile
-        val canonicalChild = File(canonicalParent, childName).canonicalFile
+        val child = File(canonicalParent, childName)
+        require(!Files.isSymbolicLink(child.toPath())) { "Model path must not be a symbolic link" }
+        val canonicalChild = child.canonicalFile
         val childPrefix = canonicalParent.path + File.separator
 
         require(canonicalChild.path.startsWith(childPrefix)) {
@@ -559,5 +655,9 @@ internal class AndroidModelDownloadBackend(
 
     private companion object {
         const val MODELS_DIRECTORY_NAME = "models"
+        const val STAGING_DIRECTORY_NAME = ".downloads"
     }
 }
+
+/** Storage preflight failure, separate from network failure. @since 0.4 */
+internal class InsufficientModelStorageException : IOException("Insufficient model storage")

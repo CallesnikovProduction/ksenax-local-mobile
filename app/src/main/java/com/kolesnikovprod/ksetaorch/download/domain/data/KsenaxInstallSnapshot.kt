@@ -54,6 +54,8 @@ data class KsenaxInstallSnapshot(
     val transferMetrics:       KsenaxDownloadTransferMetrics = KsenaxDownloadTransferMetrics(),
     val hasCandidate:          KsenaxInstallCheckState   = KsenaxInstallCheckState.NON_CONFIRMED,
     val isValidInstallation:   KsenaxInstallCheckState   = KsenaxInstallCheckState.NON_CONFIRMED,
+    /** Сохранённая причина последнего отказа; UI форматирует её самостоятельно. @since 0.4 */
+    val failure: KsenaxInstallFailure? = null,
 )
 
 /**

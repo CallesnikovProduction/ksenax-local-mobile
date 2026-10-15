@@ -11,10 +11,17 @@ import java.security.MessageDigest
  */
 internal object FileIntegrityVerifier {
 
+    /**
+     * Checks size and SHA-256 with a cancellation hook before each 128 KiB read.
+     * Cancellation propagates to the caller; concurrent truncation/growth fails verification.
+     *
+     * @since 0.4
+     */
     fun matches(
         file: File,
         expectedSizeBytes: Long,
         expectedSha256: String,
+        checkActive: () -> Unit = {},
     ): Boolean {
         require(expectedSizeBytes > 0L)
         require(expectedSha256.matches(SHA256_REGEX_PATTERN))
@@ -23,21 +30,32 @@ internal object FileIntegrityVerifier {
             return false
         }
 
-        return calculateSha256(file).equals(expectedSha256, ignoreCase = true)
+        return calculateSha256(file, expectedSizeBytes, checkActive)
+            ?.equals(expectedSha256, ignoreCase = true) == true
     }
 
-    private fun calculateSha256(file: File): String {
+    private fun calculateSha256(
+        file: File,
+        expectedSizeBytes: Long,
+        checkActive: () -> Unit,
+    ): String? {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(128 * 1024)
+        var totalBytes = 0L
 
         file.inputStream().use { inputStream ->
             while (true) {
+                checkActive()
                 val readBytes = inputStream.read(buffer)
                 if (readBytes == -1) break
 
+                totalBytes += readBytes
+                if (totalBytes > expectedSizeBytes) return null
                 digest.update(buffer, 0, readBytes)
             }
         }
+
+        if (totalBytes != expectedSizeBytes || file.length() != expectedSizeBytes) return null
 
         return digest.digest().joinToString(separator = "") { byte ->
             "%02x".format(byte.toInt() and 0xff)
